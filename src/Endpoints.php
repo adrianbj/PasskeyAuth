@@ -73,7 +73,6 @@ final class Endpoints
         private readonly Server $server,
         private readonly \ProcessWire\Wire $wire,
         private readonly array $allowedRoleIds,
-        private readonly string $userVerification,
         private readonly bool $requireResidentKey,
     ) {}
 
@@ -318,7 +317,6 @@ final class Endpoints
             $target->name,
             $target->name,  // displayName — could be made configurable later
             $excludeIds,
-            $this->userVerification,
             $this->requireResidentKey,
         );
 
@@ -406,7 +404,7 @@ final class Endpoints
         }
 
         try {
-            $verified = $this->server->verifyRegistration($clientDataJson, $attestationObject, $challenge, $this->userVerification);
+            $verified = $this->server->verifyRegistration($clientDataJson, $attestationObject, $challenge);
         } catch (\Throwable $e) {
             $this->wire->wire('log')->save('passkey-auth', 'verifyRegistration failed: ' . self::sanitizeForLog($e->getMessage()));
             $this->clearRegistrationSession();
@@ -492,7 +490,7 @@ final class Endpoints
             return $this->error('Too many login attempts', 'rate_limited', 429);
         }
 
-        $result = $this->server->loginOptions([], $this->userVerification);
+        $result = $this->server->loginOptions([]);
 
         $this->session()->setFor(self::SESSION_NAMESPACE, self::LOGIN_CHALLENGE_KEY, $result['challenge']);
 
@@ -635,7 +633,6 @@ final class Endpoints
                 (string) $row['public_key'],
                 $challenge,
                 (int) $row['sign_count'],
-                $this->userVerification,
             );
         } catch (\Throwable $e) {
             $this->wire->wire('log')->save('passkey-auth', 'verifyLogin failed: ' . self::sanitizeForLog($e->getMessage()));

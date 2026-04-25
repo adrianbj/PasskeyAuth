@@ -73,7 +73,12 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $this->set('appName', '');
         $this->set('rpId', '');
         $this->set('allowedRoles', []);
-        $this->set('userVerification', 'preferred');
+        // userVerification is hardcoded to 'required' in Server.php — see the
+        // comment there. It is intentionally not exposed as a config option:
+        // this is a passkey module, and the W3C / FIDO Alliance guidance for
+        // passkey deployments is UV=required. Lower settings are footguns
+        // (`preferred` silently accepts unverified assertions) or contradict
+        // the passkey model entirely (`discouraged`).
         // Resident keys (discoverable credentials) are always required: this is a
         // passkey module — the passwordless "Sign in with passkey" flow depends
         // on the authenticator returning a userHandle, which only resident keys
@@ -149,7 +154,6 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             $server,
             $this,
             $allowedRoleIds,
-            (string) $this->userVerification,
             true,  // requireResidentKey — see __construct comment
         );
         return $this->endpoints;
@@ -610,15 +614,6 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             $f->addOption($role->id, $role->name);
         }
         if (!empty($data['allowedRoles'])) $f->attr('value', $data['allowedRoles']);
-        $fields->add($f);
-
-        $f = $modules->get('InputfieldRadios');
-        $f->name = 'userVerification';
-        $f->label = 'User verification';
-        $f->addOption('discouraged', 'Discouraged');
-        $f->addOption('preferred', 'Preferred (default)');
-        $f->addOption('required', 'Required');
-        $f->value = $data['userVerification'] ?? 'preferred';
         $fields->add($f);
 
         $f = $modules->get('InputfieldCheckbox');

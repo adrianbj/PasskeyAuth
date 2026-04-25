@@ -114,7 +114,6 @@ final class Server
         string $userName,
         string $userDisplayName,
         array $excludeCredentialIds = [],
-        string $userVerification = 'preferred',
         bool $requireResidentKey = true,
     ): array {
         // SEC-D M6: pack('N', ...) silently truncates to 32 unsigned bits. PW user
@@ -124,13 +123,17 @@ final class Server
             throw new \RuntimeException('userId out of range for 32-bit userHandle encoding');
         }
         $userIdBin = pack('N', $userId);  // 4-byte big-endian for compactness; alternative: hex
+        // userVerification is hardcoded to 'required': this is a passkey module,
+        // and the W3C / FIDO Alliance guidance for passkey deployments is UV=required.
+        // 'preferred' would silently accept present-but-unverified assertions and
+        // 'discouraged' contradicts the passkey security model entirely.
         $args = $this->webauthn->getCreateArgs(
             $userIdBin,
             $userName,
             $userDisplayName,
             30,                                  // timeout seconds — caller-overridable later
             $requireResidentKey,
-            $userVerification,
+            'required',
             null,                                // crossPlatformAttachment: null = any (platform + roaming). true = roaming only. false = platform only.
             $excludeCredentialIds
         );
@@ -143,8 +146,8 @@ final class Server
 
     public function loginOptions(
         array $allowedCredentialIds = [],
-        string $userVerification = 'preferred',
     ): array {
+        // userVerification hardcoded to 'required' — see registrationOptions().
         $args = $this->webauthn->getGetArgs(
             $allowedCredentialIds,
             30,
@@ -153,7 +156,7 @@ final class Server
             true,   // typeBle
             true,   // typeHybrid
             true,   // typeInt
-            $userVerification
+            'required'
         );
         return [
             'options'   => $args,
@@ -167,7 +170,6 @@ final class Server
      * @param string $clientDataJson    Raw clientDataJSON bytes from the browser.
      * @param string $attestationObject Raw attestationObject bytes.
      * @param string $challenge         Original challenge bytes (server-side).
-     * @param string $userVerification  'required' | 'preferred' | 'discouraged'.
      * @return array{credentialId: string, publicKey: string, signCount: int, aaguid: string|null, transports: string|null}
      * @throws \lbuchs\WebAuthn\WebAuthnException on attestation verification failure
      */
@@ -175,16 +177,17 @@ final class Server
         string $clientDataJson,
         string $attestationObject,
         string $challenge,
-        string $userVerification = 'preferred',
     ): array {
         // SEC-D H1: anchored origin check before delegating to lbuchs.
         $this->assertOrigin($clientDataJson);
         // Note: lbuchs lib has no setChallenge(); challenge is passed directly to processCreate.
+        // UV is required (see registrationOptions); the bool here is the lib's
+        // requireUserVerification flag — true means reject assertions without UV.
         $data = $this->webauthn->processCreate(
             $clientDataJson,
             $attestationObject,
             $challenge,
-            $this->uvToBool($userVerification),  // lib accepts only bool here
+            true,                                // requireUserVerification
             true,                                // requireUserPresent
             true,                                // failIfRootMismatch
         );
@@ -226,7 +229,6 @@ final class Server
      * @param string      $publicKey         Stored credential public key.
      * @param string      $challenge         Original challenge bytes.
      * @param int         $storedSignCount   Last seen signature counter for the credential.
-     * @param string      $userVerification  'required' | 'preferred' | 'discouraged'.
      * @return array{signCount: int}
      * @throws \lbuchs\WebAuthn\WebAuthnException on verification failure
      */
@@ -238,7 +240,6 @@ final class Server
         string $publicKey,
         string $challenge,
         int $storedSignCount,
-        string $userVerification = 'preferred',
     ): array {
         // SEC-D H1: anchored origin check before delegating to lbuchs.
         $this->assertOrigin($clientDataJson);
@@ -248,6 +249,7 @@ final class Server
         // returns ?int (null when the authenticator reports 0, e.g. iCloud Keychain).
         // Falling back to $storedSignCount in the null case preserves existing rollback
         // semantics without ever overwriting our stored counter with a stale value.
+        // UV is required — bool true here is the lib's requireUserVerification flag.
         $this->webauthn->processGet(
             $clientDataJson,
             $authenticatorData,
@@ -255,20 +257,11 @@ final class Server
             $publicKey,
             $challenge,
             $storedSignCount,
-            $this->uvToBool($userVerification),
+            true,
         );
 
         return [
             'signCount' => (int) ($this->webauthn->getSignatureCounter() ?? $storedSignCount),
         ];
-    }
-
-    /**
-     * Map our string user-verification preference to the bool the lib's verify methods expect.
-     * Only 'required' counts as strict UV; 'preferred' and 'discouraged' both relax the check.
-     */
-    private function uvToBool(string $userVerification): bool
-    {
-        return strtolower($userVerification) === 'required';
     }
 }

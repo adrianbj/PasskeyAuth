@@ -16,23 +16,6 @@ Sign in to ProcessWire with a passkey — Touch ID, Face ID, Windows Hello, an i
 - HTTPS in production (browsers refuse WebAuthn on insecure origins; `localhost` and `127.0.0.1` are exempt for development)
 - A modern browser with WebAuthn support (Chrome 67+, Safari 14+, Firefox 60+, Edge 18+)
 
-## Install
-
-### Via Composer (recommended)
-
-```bash
-cd /path/to/site/modules
-composer create-project --no-dev adrianbj/passkey-auth PasskeyAuth
-```
-
-### Manual
-
-1. Download or clone this repo into `site/modules/PasskeyAuth/`
-2. Run `composer install --no-dev` inside that directory to fetch the lbuchs/webauthn dependency
-3. In the ProcessWire admin: **Modules → Refresh → Install: Passkey Auth**
-
-The companion `ProcessPasskeyAuth` module (admin-gated endpoints) installs automatically.
-
 ## Configure
 
 **Modules → Configure → PasskeyAuth**
@@ -42,7 +25,6 @@ The companion `ProcessPasskeyAuth` module (admin-gated endpoints) installs autom
 | **Application name** | Friendly name shown in the OS biometric prompt. Defaults to your host. |
 | **Relying Party ID** | Hostname WebAuthn binds credentials to. Must equal the admin host or a registrable suffix (e.g. RP ID `example.com` works for `admin.example.com`). **Do not change after passkeys are registered** — existing keys will stop working. |
 | **Allowed roles** | Only users with at least one of these roles can register or use passkeys. Fail-closed: with no roles selected, no one can use passkeys. |
-| **User verification** | `discouraged` / `preferred` (default) / `required`. Controls the strictness of the biometric/PIN check. |
 | **Show registration banner** | Auto-prompt logged-in admins (in allowed roles) without a passkey to register one. |
 
 ## Use
