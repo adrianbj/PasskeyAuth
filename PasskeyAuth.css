@@ -1,0 +1,121 @@
+.passkey-auth-login { margin-top: 1em; }
+.passkey-auth-status { margin-top: .5em; min-height: 1.4em; color: #c00; }
+
+/* Banner is injected directly after <body> by the Page::render hook so it
+   appears above the admin chrome. Self-styled (not slotted into the PW
+   notice list) so it renders consistently across admin themes and never
+   risks corrupting AJAX responses. */
+.passkey-auth-banner {
+    display: flex;
+    align-items: center;
+    gap: .75em;
+    flex-wrap: wrap;
+    background: #fff8e1;
+    border-bottom: 1px solid #f0ad4e;
+    color: #856404;
+    padding: .65em 1.25em;
+    font-size: 14px;
+    line-height: 1.4;
+}
+.passkey-auth-banner__icon {
+    flex-shrink: 0;
+    font-size: 16px;
+}
+.passkey-auth-banner__text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.passkey-auth-banner__error {
+    flex-basis: 100%;
+    color: #c00;
+    font-size: 13px;
+}
+.passkey-auth-banner__btn {
+    flex-shrink: 0;
+    padding: .35em .9em;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.2;
+    color: #57606a;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.passkey-auth-banner__btn:hover {
+    background: #f6f8fa;
+    border-color: #afb8c1;
+}
+.passkey-auth-banner__btn:focus-visible {
+    outline: 2px solid #0969da;
+    outline-offset: 1px;
+}
+.passkey-auth-banner__btn--primary {
+    color: #fff;
+    background: #1f883d;
+    border-color: #1f883d;
+}
+.passkey-auth-banner__btn--primary:hover {
+    background: #1a7f37;
+    border-color: #1a7f37;
+    color: #fff;
+}
+.passkey-auth-banner__btn[disabled] {
+    opacity: .6;
+    cursor: default;
+}
+
+.passkey-auth-manage { margin-top: .25em; }
+.passkey-auth-list {
+    list-style: none; padding: 0; margin: 0 0 .75em;
+}
+.passkey-auth-list li {
+    display: flex; align-items: center; gap: 1em;
+    padding: .65em 0; border-bottom: 1px solid #eaecef;
+}
+.passkey-auth-list li:last-child { border-bottom: none; }
+.passkey-auth-list .passkey-auth-row-text {
+    flex: 1; min-width: 0;
+}
+.passkey-auth-list .passkey-auth-name {
+    display: block; font-weight: 500; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.passkey-auth-list .passkey-auth-name:hover { text-decoration: underline; }
+.passkey-auth-list .passkey-auth-meta {
+    display: block; color: #6a737d; font-size: 13px;
+    margin-top: 2px;
+}
+.passkey-auth-list input[type="text"] {
+    width: 100%; box-sizing: border-box;
+    font: inherit; padding: .25em .4em;
+}
+.passkey-auth-list button {
+    flex-shrink: 0;
+    padding: .35em .8em;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    color: #57606a;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.passkey-auth-list button:hover {
+    color: #cf222e;
+    background: #fff5f5;
+    border-color: #cf222e;
+}
+.passkey-auth-list button:active {
+    background: #ffebe9;
+}
+.passkey-auth-list button:focus-visible {
+    outline: 2px solid #0969da;
+    outline-offset: 1px;
+}
+.passkey-auth-manage [data-passkey-auth-action="add"] {
+    margin-top: .25em;
+}
