@@ -404,12 +404,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $user = $this->wire('user');
         if (!$user->isLoggedin()) return false;
 
-        $allowedRoleIds = $this->getAllowedRoleIds();
-        $allowed = false;
-        foreach ($user->roles as $r) {
-            if (in_array($r->id, $allowedRoleIds, true)) { $allowed = true; break; }
-        }
-        if (!$allowed) return false;
+        if (!$this->isUserInAllowedRoles($user)) return false;
 
         if ($this->wire('session')->getFor('PasskeyAuth', 'banner_dismissed')) return false;
 
