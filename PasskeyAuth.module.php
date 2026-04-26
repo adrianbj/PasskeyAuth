@@ -115,6 +115,22 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
     }
 
     /**
+     * Does this user have at least one role on the passkey allow-list?
+     * Mirrors Endpoints::isAllowedByRole() so the user-edit UI can decide
+     * whether to expose the Passkeys fieldset, without instantiating the
+     * full Endpoints stack.
+     */
+    private function isUserInAllowedRoles(\ProcessWire\User $user): bool
+    {
+        $allowed = $this->getAllowedRoleIds();
+        if (empty($allowed)) return false;
+        foreach ($user->roles as $role) {
+            if (in_array((int) $role->id, $allowed, true)) return true;
+        }
+        return false;
+    }
+
+    /**
      * Build (and cache) the inner Endpoints instance. Public so
      * ProcessPasskeyAuth can delegate to the same configured logic without
      * duplicating wiring.
@@ -286,6 +302,14 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $storage = new \PasskeyAuth\Storage($this->wire('database')->pdo(), self::TABLE_NAME);
         $rows    = $storage->listForUser($editedUser->id);
         $count   = count($rows);
+
+        // Hide the fieldset when the edited user has no allow-listed role AND
+        // no existing passkeys: registration would be rejected by Endpoints
+        // (role_denied) and there's nothing to manage. If they DO have stored
+        // passkeys but lost role access, still render the fieldset so the
+        // admin can revoke them — never strand credentials in the DB without
+        // a UI to remove them.
+        if ($count === 0 && !$this->isUserInAllowedRoles($editedUser)) return;
 
         $fieldset = $modules->get('InputfieldFieldset');
         $fieldset->name = 'passkey_auth_manage';
