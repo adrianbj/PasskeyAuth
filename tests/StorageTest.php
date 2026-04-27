@@ -22,8 +22,6 @@ final class StorageTest extends TestCase
             'credential_id' => "\x01\x02\x03",
             'public_key'    => "\xAA\xBB\xCC",
             'name'          => 'My Mac',
-            'aaguid'        => null,
-            'transports'    => null,
             'sign_count'    => 0,
         ]);
         $this->assertGreaterThan(0, $id);

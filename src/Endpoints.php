@@ -432,8 +432,6 @@ final class Endpoints
                 'public_key'    => $verified['publicKey'],
                 'sign_count'    => $verified['signCount'],
                 'name'          => $sanitizedName,
-                'aaguid'        => $verified['aaguid'],
-                'transports'    => $verified['transports'],
             ], self::MAX_CREDENTIALS_PER_USER);
         } catch (\PDOException $e) {
             $this->clearRegistrationSession();

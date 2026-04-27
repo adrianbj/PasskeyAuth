@@ -170,7 +170,7 @@ final class Server
      * @param string $clientDataJson    Raw clientDataJSON bytes from the browser.
      * @param string $attestationObject Raw attestationObject bytes.
      * @param string $challenge         Original challenge bytes (server-side).
-     * @return array{credentialId: string, publicKey: string, signCount: int, aaguid: string|null, transports: string|null}
+     * @return array{credentialId: string, publicKey: string, signCount: int}
      * @throws \lbuchs\WebAuthn\WebAuthnException on attestation verification failure
      */
     public function verifyRegistration(
@@ -196,27 +196,7 @@ final class Server
             'credentialId' => $data->credentialId,
             'publicKey'    => $data->credentialPublicKey,
             'signCount'    => (int) ($data->signatureCounter ?? 0),
-            'aaguid'       => $data->AAGUID ?? null,
-            // M2: transports column is VARCHAR(80). Authenticator-supplied transport
-            // lists are typically a few short tokens ("usb","nfc","ble","internal",
-            // "hybrid") fitting easily, but a hostile or buggy authenticator could
-            // exceed the column width and trigger silent truncation (or a write
-            // error in MySQL strict mode). Drop the value rather than store
-            // something that won't round-trip.
-            'transports'   => self::encodeTransports($data->transports ?? null),
         ];
-    }
-
-    /**
-     * Encode authenticator transports for storage, returning null if the encoded
-     * value would not fit the schema's 80-byte column or fails to encode.
-     */
-    private static function encodeTransports($transports): ?string
-    {
-        if ($transports === null) return null;
-        $json = json_encode($transports);
-        if (!is_string($json) || strlen($json) > 80) return null;
-        return $json;
     }
 
     /**

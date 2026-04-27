@@ -12,8 +12,6 @@ function pa_test_pdo(): PDO {
         public_key    BLOB NOT NULL,
         sign_count    INTEGER NOT NULL DEFAULT 0,
         name          TEXT NOT NULL,
-        aaguid        TEXT,
-        transports    TEXT,
         created       TEXT DEFAULT CURRENT_TIMESTAMP,
         last_used     TEXT
     )");

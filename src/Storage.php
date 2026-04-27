@@ -14,8 +14,8 @@ final class Storage
     public function add(int $userId, array $row): int
     {
         $sql = "INSERT INTO {$this->tableName}
-                (user_id, credential_id, public_key, sign_count, name, aaguid, transports)
-                VALUES (:user_id, :credential_id, :public_key, :sign_count, :name, :aaguid, :transports)";
+                (user_id, credential_id, public_key, sign_count, name)
+                VALUES (:user_id, :credential_id, :public_key, :sign_count, :name)";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             'user_id'       => $userId,
@@ -23,8 +23,6 @@ final class Storage
             'public_key'    => $row['public_key'],
             'sign_count'    => $row['sign_count'] ?? 0,
             'name'          => $row['name'],
-            'aaguid'        => $row['aaguid'] ?? null,
-            'transports'    => $row['transports'] ?? null,
         ]);
         return (int) $this->pdo->lastInsertId();
     }

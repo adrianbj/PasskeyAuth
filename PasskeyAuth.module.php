@@ -581,8 +581,6 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             public_key      BLOB NOT NULL,
             sign_count      INT UNSIGNED NOT NULL DEFAULT 0,
             name            VARCHAR(120) NOT NULL,
-            aaguid          CHAR(36) DEFAULT NULL,
-            transports      VARCHAR(80) DEFAULT NULL,
             created         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             last_used       TIMESTAMP NULL DEFAULT NULL,
             PRIMARY KEY (id),
