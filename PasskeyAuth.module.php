@@ -8,29 +8,24 @@ require_once __DIR__ . '/vendor/autoload.php';
 /**
  * PasskeyAuth — WebAuthn passkey login for the ProcessWire admin.
  *
- * SEC-E I-A8: CSP compatibility note. This module emits two kinds of
- * page-level scripts:
+ * CSP: this module emits two kinds of page-level scripts, both compatible
+ * with a strict `script-src 'self'` policy:
  *
- *   1. <script>window.PasskeyAuth = {...}</script>  — inline JSON config
- *      injected by addManageFieldset(), injectBanner(), and addLoginButton().
- *      Requires either `script-src 'unsafe-inline'`, `'unsafe-hashes'`, or a
- *      per-request nonce/hash to be allowed by a strict Content-Security-Policy.
+ *   1. <script type="application/json" class="passkey-auth-config">…</script>
+ *      — inline JSON config injected by addManageFieldset(), injectBanner(),
+ *      and addLoginButton(). NOT executable; CSP `script-src` only governs
+ *      executable scripts, so this is allowed without nonces or
+ *      'unsafe-inline'. PasskeyAuth.js reads it via querySelector + JSON.parse.
+ *      `JSON_HEX_TAG` escapes `<` and `>` so a `</script>` substring inside
+ *      the payload can't terminate the element.
  *
  *   2. <script src="/site/modules/PasskeyAuth/PasskeyAuth.js" defer></script>
- *      — external module bootstrap. Allowed by any policy that whitelists the
- *      module's own origin (typically 'self').
+ *      — external module bootstrap. Allowed by `'self'`.
  *
- * If you deploy a strict CSP without 'unsafe-inline', the inline JSON blob
- * (#1) will be blocked and the JS module will receive an empty config,
- * breaking all passkey UI. Workarounds, in order of preference:
- *
- *   - Add a per-request nonce to the policy (`script-src 'nonce-XYZ'`) and
- *     attach the same nonce attribute to each inline tag emitted by this
- *     module. (Not currently implemented — would require a config option for
- *     the nonce source.)
- *   - Move the config to an attribute on the script tag and read it from JS
- *     via dataset. (Future enhancement.)
- *   - Permit `'unsafe-inline'` for the admin URL only.
+ * Note: injectBanner() also emits a small inline `<style>` block for the
+ * critical CSS (FOUC mitigation). A strict `style-src 'self'` policy will
+ * block it; the banner still functions but flashes unstyled briefly until
+ * the linked stylesheet loads. The external stylesheet is `'self'`-allowed.
  */
 class PasskeyAuth extends WireData implements Module, ConfigurableModule
 {
@@ -43,7 +38,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             'title'    => 'Passkey Auth',
             'summary'  => 'WebAuthn passkey login for ProcessWire admin',
             'author'   => 'Adrian Jones',
-            'version'  => '0.1.0',
+            'version'  => '0.2.0',
             'icon'     => 'key',
             // autoload=true is required: the login URL hooks must be registered
             // before page resolution so guest POSTs to /passkey-auth/login/*
@@ -97,6 +92,20 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $config   = $this->wire('config');
         $adminUrl = $this->wire('pages')->get((int) $config->adminRootPageID)->url;
         return $adminUrl . 'passkey-auth/';
+    }
+
+    /**
+     * Build a URL to one of this module's static assets with a filemtime-based
+     * cache buster appended. Defeats stale-cached JS/CSS after edits without
+     * needing manual version bumps. Falls back to the unversioned URL if the
+     * file is unreadable.
+     */
+    private function assetUrl(string $file): string
+    {
+        $url = $this->wire('config')->urls($this) . $file;
+        $path = __DIR__ . '/' . $file;
+        $mtime = @filemtime($path);
+        return $mtime ? $url . '?v=' . $mtime : $url;
     }
 
     /**
@@ -320,8 +329,8 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             : \ProcessWire\Inputfield::collapsedYes;
 
         $apiUrl = $this->manageApiUrl();
-        $jsUrl  = $config->urls($this) . 'PasskeyAuth.js';
-        $cssUrl = $config->urls($this) . 'PasskeyAuth.css';
+        $jsUrl  = $this->assetUrl('PasskeyAuth.js');
+        $cssUrl = $this->assetUrl('PasskeyAuth.css');
         $csrf   = $session->CSRF->getTokenValue('passkey-auth');
 
         // Render existing rows server-side so they appear immediately with no
@@ -352,7 +361,12 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
                 'csrf'   => $csrf,
                 'userId' => (int) $editedUser->id,
             ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
-            $markup->value .= '<script>window.PasskeyAuth = ' . $payload . ';</script>'
+            // CSP: <script type="application/json"> is non-executable, so a
+            // strict `script-src 'self'` policy permits it without nonces or
+            // 'unsafe-inline'. The external module script is same-origin.
+            // JSON_HEX_TAG escapes `<` / `>`, so a `</script>` substring inside
+            // the payload cannot terminate the element early.
+            $markup->value .= '<script type="application/json" class="passkey-auth-config">' . $payload . '</script>'
                 . '<script src="' . htmlspecialchars($jsUrl) . '" defer></script>';
         } catch (\JsonException $e) {
             $this->wire('log')->save('passkey-auth', 'addManageFieldset: json_encode failed: ' . $e->getMessage());
@@ -435,8 +449,8 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
 
         $session = $this->wire('session');
         $apiUrl  = $this->manageApiUrl();
-        $jsUrl   = $config->urls($this) . 'PasskeyAuth.js';
-        $cssUrl  = $config->urls($this) . 'PasskeyAuth.css';
+        $jsUrl   = $this->assetUrl('PasskeyAuth.js');
+        $cssUrl  = $this->assetUrl('PasskeyAuth.css');
         $csrf    = $session->CSRF->getTokenValue('passkey-auth');
 
         try {
@@ -483,7 +497,8 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
           . '.passkey-auth-banner__btn--primary{color:#fff;background:#1f883d;border-color:#1f883d}';
         $headInject = '<style>' . $criticalCss . '</style>'
                     . '<link rel="stylesheet" href="' . htmlspecialchars($cssUrl) . '">';
-        $tail       = '<script>window.PasskeyAuth = ' . $payload . ';</script>'
+        // CSP: see addManageFieldset() for the rationale on JSON-typed script.
+        $tail       = '<script type="application/json" class="passkey-auth-config">' . $payload . '</script>'
                     . '<script src="' . htmlspecialchars($jsUrl) . '" defer></script>';
 
         // 1) CSS link into <head>. SEC-E L-A1: only match a </head> that
@@ -546,8 +561,8 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         </div>';
         $form->add($markup);
 
-        $jsUrl  = $config->urls($this) . 'PasskeyAuth.js';
-        $cssUrl = $config->urls($this) . 'PasskeyAuth.css';
+        $jsUrl  = $this->assetUrl('PasskeyAuth.js');
+        $cssUrl = $this->assetUrl('PasskeyAuth.css');
         $apiUrl = self::LOGIN_API_URL;
 
         $config->styles->add($cssUrl);
@@ -559,8 +574,9 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
                 'apiUrl' => $apiUrl,
                 'mode'   => 'login',
             ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+            // CSP: see addManageFieldset() for the rationale on JSON-typed script.
             $scriptMarkup->value = '
-        <script>window.PasskeyAuth = ' . $payload . ';</script>
+        <script type="application/json" class="passkey-auth-config">' . $payload . '</script>
         <script src="' . htmlspecialchars($jsUrl) . '" defer></script>';
         } catch (\JsonException $e) {
             $this->wire('log')->save('passkey-auth', 'addLoginButton: json_encode failed: ' . $e->getMessage());
@@ -574,9 +590,14 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
     public function ___install(): void
     {
         $db = $this->wire('database');
+        // user_handle is the opaque per-user identifier stored on the
+        // authenticator (WebAuthn user.id). New installs use a random 16-byte
+        // value generated at first registration; spec allows up to 64 bytes.
+        // Pre-0.2.0 installs that upgrade get a backfill in ___upgrade().
         $db->exec("CREATE TABLE IF NOT EXISTS " . self::TABLE_NAME . " (
             id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id         INT UNSIGNED NOT NULL,
+            user_handle     VARBINARY(64) NOT NULL,
             credential_id   VARBINARY(255) NOT NULL,
             public_key      BLOB NOT NULL,
             sign_count      INT UNSIGNED NOT NULL DEFAULT 0,
@@ -589,6 +610,43 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
         $this->message('PasskeyAuth installed. Configure module before use.');
+    }
+
+    /**
+     * Upgrade hook. Currently handles only 0.1.x → 0.2.0:
+     * adds the user_handle column and backfills existing rows with the
+     * legacy 4-byte big-endian encoding of user_id so already-registered
+     * authenticators keep working. New registrations get random 16-byte
+     * handles; legacy rows rotate by user re-registration.
+     */
+    public function ___upgrade($fromVersion, $toVersion): void
+    {
+        $db = $this->wire('database');
+        $table = self::TABLE_NAME;
+
+        $stmt = $db->prepare("SHOW COLUMNS FROM `$table` LIKE 'user_handle'");
+        $stmt->execute();
+        if ($stmt->fetch()) return;
+
+        $db->exec("ALTER TABLE `$table` ADD COLUMN user_handle VARBINARY(64) NOT NULL DEFAULT '' AFTER user_id");
+
+        // Backfill: pack('N', user_id) preserves the handle the existing
+        // authenticators have stored on-device. Without this, every previously
+        // registered passkey would fail the userHandle binding check on next
+        // login.
+        $rows = $db->query("SELECT id, user_id FROM `$table`")->fetchAll(\PDO::FETCH_ASSOC);
+        $update = $db->prepare("UPDATE `$table` SET user_handle = :uh WHERE id = :id");
+        foreach ($rows as $row) {
+            $update->execute([
+                'uh' => pack('N', (int) $row['user_id']),
+                'id' => (int) $row['id'],
+            ]);
+        }
+
+        // Drop the placeholder default now that all rows have a real handle.
+        $db->exec("ALTER TABLE `$table` ALTER COLUMN user_handle DROP DEFAULT");
+
+        $this->message(sprintf('PasskeyAuth upgraded: backfilled %d existing passkey row(s) with legacy user handles.', count($rows)));
     }
 
     public function ___uninstall(): void

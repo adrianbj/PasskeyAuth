@@ -238,6 +238,8 @@ final class Endpoints
     {
         $this->session()->removeFor(self::SESSION_NAMESPACE, self::REGISTER_CHALLENGE_KEY);
         $this->session()->removeFor(self::SESSION_NAMESPACE, 'register_user_id');
+        $this->session()->removeFor(self::SESSION_NAMESPACE, 'register_session_user_id');
+        $this->session()->removeFor(self::SESSION_NAMESPACE, 'register_user_handle');
         $this->session()->removeFor(self::SESSION_NAMESPACE, 'register_name');
     }
 
@@ -312,8 +314,24 @@ final class Endpoints
             return $this->error('Invalid name', 'bad_request', 400);
         }
 
+        // Random opaque user handle. WebAuthn §5.4.3 requires a per-account
+        // identifier that "MUST NOT contain personally identifying information"
+        // — the handle is stored on the authenticator and (for synced
+        // passkeys) replicated across the user's devices and cloud provider.
+        // Binding it to user.id leaks PW user IDs to anyone who recovers the
+        // authenticator's stored credential metadata.
+        //
+        // Reuse the existing handle if this user already has any credentials,
+        // so all of an account's passkeys share one handle (spec §5.4.3).
+        // Pre-0.2.0 rows carry a legacy 4-byte big-endian user.id encoding;
+        // reuse keeps them working without rotation.
+        $userHandle = $this->storage->findUserHandleForUser($target->id);
+        if ($userHandle === null) {
+            $userHandle = random_bytes(16);
+        }
+
         $result = $this->server->registrationOptions(
-            $target->id,
+            $userHandle,
             $target->name,
             $target->name,  // displayName — could be made configurable later
             $excludeIds,
@@ -326,6 +344,13 @@ final class Endpoints
         // confirm the same browser session is completing the ceremony, even
         // if the target is someone else (superuser-on-behalf flow).
         $this->session()->setFor(self::SESSION_NAMESPACE, 'register_session_user_id', $current->id);
+        // Stash the handle that we emitted to the authenticator. registerFinish
+        // must persist this exact value so future login userHandle returns can
+        // be matched. Storing the resolved handle (rather than re-deriving)
+        // also defends against a concurrent same-user registration on another
+        // session that lands a different random handle in storage between
+        // options and finish.
+        $this->session()->setFor(self::SESSION_NAMESPACE, 'register_user_handle', $userHandle);
         $this->session()->setFor(self::SESSION_NAMESPACE, 'register_name', $name);
 
         return $this->respond(['options' => $result['options']]);
@@ -341,6 +366,7 @@ final class Endpoints
         $challenge       = $this->session()->getFor(self::SESSION_NAMESPACE, self::REGISTER_CHALLENGE_KEY);
         $userId          = (int) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_user_id');
         $sessionUserId   = (int) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_session_user_id');
+        $userHandle      = (string) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_user_handle');
         $name            = (string) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_name');
 
         // JS may override the auto-generated name after navigator.credentials.create()
@@ -352,7 +378,7 @@ final class Endpoints
             $name = $bodyName;
         }
 
-        if (!$challenge || !$userId) {
+        if (!$challenge || !$userId || $userHandle === '') {
             $this->clearRegistrationSession();
             return $this->error('No registration in progress', 'no_session', 400);
         }
@@ -428,6 +454,7 @@ final class Endpoints
             // window. Returns null if the cap was hit between the pre-flight
             // count above and the row-locked check inside the transaction.
             $id = $this->storage->addIfUnderCap($userId, [
+                'user_handle'   => $userHandle,
                 'credential_id' => $verified['credentialId'],
                 'public_key'    => $verified['publicKey'],
                 'sign_count'    => $verified['signCount'],
@@ -576,18 +603,24 @@ final class Endpoints
             return $this->error('Authentication failed', 'auth_failed', 400);
         }
 
-        // C1: userHandle is REQUIRED. Reject uniformly (auth_failed) if missing,
-        // wrong length, or doesn't match the credential row's user_id. Treat all
-        // failure modes the same — don't leak which check failed.
+        // C1: userHandle is REQUIRED. Reject uniformly (auth_failed) if missing
+        // or doesn't match the credential row's stored opaque handle. Treat
+        // all failure modes the same — don't leak which check failed.
+        //
+        // The stored handle is opaque bytes: random 16 for credentials
+        // registered on 0.2.0+, or legacy `pack('N', user_id)` (4 bytes) for
+        // rows backfilled during the 0.1 → 0.2 upgrade. hash_equals handles
+        // both transparently in constant time.
         if (!is_string($userHandleRaw) || $userHandleRaw === '') {
             $this->clearLoginSession();
             $this->logLoginFailure('missing_user_handle', ['credential_id' => (int) $row['id']]);
             return $this->error('Authentication failed', 'auth_failed', 400);
         }
         $userHandle = $this->base64UrlDecode($userHandleRaw);
+        $expectedHandle = (string) ($row['user_handle'] ?? '');
         if ($userHandle === null
-            || strlen($userHandle) !== 4
-            || unpack('N', $userHandle)[1] !== (int) $row['user_id']
+            || $expectedHandle === ''
+            || !hash_equals($expectedHandle, $userHandle)
         ) {
             $this->clearLoginSession();
             $this->logLoginFailure('user_handle_mismatch', ['credential_id' => (int) $row['id']]);

@@ -102,33 +102,35 @@ final class Server
     /**
      * Generate registration options for a user.
      *
-     * @param int    $userId            ProcessWire user ID (binary-encoded as user.id for WebAuthn)
+     * @param string $userHandle        Opaque WebAuthn user handle bytes (1–64). Caller is
+     *                                  responsible for using the same handle for every credential
+     *                                  belonging to one account (per WebAuthn §5.4.3) and for
+     *                                  ensuring it carries no PII (handle is exfiltrable via
+     *                                  stolen/synced authenticators).
      * @param string $userName          Username (login handle)
      * @param string $userDisplayName   Friendly display name
      * @param string[] $excludeCredentialIds Raw credential ID bytes the user already has
      * @return array Decoded option blob (cast from object) ready for json_encode
-     * @note user.id is encoded as 4-byte big-endian via pack('N'); assumes PW user ID fits in unsigned 32-bit.
      */
     public function registrationOptions(
-        int $userId,
+        string $userHandle,
         string $userName,
         string $userDisplayName,
         array $excludeCredentialIds = [],
         bool $requireResidentKey = true,
     ): array {
-        // SEC-D M6: pack('N', ...) silently truncates to 32 unsigned bits. PW user
-        // IDs fit today (INT UNSIGNED), but a future migration with values > 2^32
-        // would silently collide on the userHandle. Refuse rather than corrupt.
-        if ($userId <= 0 || $userId > 0xFFFFFFFF) {
-            throw new \RuntimeException('userId out of range for 32-bit userHandle encoding');
+        // WebAuthn §5.4.3 caps user.id at 64 bytes; the empty handle is also
+        // not a legal value. Reject rather than truncate or substitute.
+        $handleLen = strlen($userHandle);
+        if ($handleLen < 1 || $handleLen > 64) {
+            throw new \RuntimeException('userHandle must be 1-64 bytes');
         }
-        $userIdBin = pack('N', $userId);  // 4-byte big-endian for compactness; alternative: hex
         // userVerification is hardcoded to 'required': this is a passkey module,
         // and the W3C / FIDO Alliance guidance for passkey deployments is UV=required.
         // 'preferred' would silently accept present-but-unverified assertions and
         // 'discouraged' contradicts the passkey security model entirely.
         $args = $this->webauthn->getCreateArgs(
-            $userIdBin,
+            $userHandle,
             $userName,
             $userDisplayName,
             30,                                  // timeout seconds — caller-overridable later

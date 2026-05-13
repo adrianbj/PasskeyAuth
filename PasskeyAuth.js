@@ -1,6 +1,14 @@
 (function() {
     'use strict';
-    const cfg = window.PasskeyAuth || {};
+    // CSP-friendly: config travels in a <script type="application/json"> block
+    // (non-executable, allowed by `script-src 'self'`). Read the first one we
+    // can find; the banner/manage/login emitters each ship the same apiUrl +
+    // csrf shape, so order doesn't matter when more than one is present.
+    let cfg = {};
+    try {
+        const el = document.querySelector('script.passkey-auth-config[type="application/json"]');
+        if (el && el.textContent) cfg = JSON.parse(el.textContent);
+    } catch (_) { /* malformed JSON: fall through to early return */ }
     if (!cfg.apiUrl || !cfg.mode) return;
 
     // ---- Helpers ----
@@ -75,10 +83,10 @@
     }
 
     // ---- Dispatch ----
-    // DOM-driven, not mode-driven: when both the profile "manage" section and
-    // the (0-passkey) banner appear on the same page, both inline scripts set
-    // window.PasskeyAuth and only the LAST one wins for `cfg.mode`. Detect each
-    // mode by DOM presence so all relevant initializers run.
+    // DOM-driven, not mode-driven: when the profile "manage" section and the
+    // (0-passkey) banner appear on the same page, both ship a config block
+    // and `cfg.mode` reflects only the first one. Detect each mode by DOM
+    // presence so all relevant initializers run.
     document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById('passkey-auth-signin'))            initLogin();
         if (document.querySelector('[data-passkey-auth-banner]'))      initBanner();

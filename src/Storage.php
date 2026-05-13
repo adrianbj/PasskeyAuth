@@ -14,17 +14,35 @@ final class Storage
     public function add(int $userId, array $row): int
     {
         $sql = "INSERT INTO {$this->tableName}
-                (user_id, credential_id, public_key, sign_count, name)
-                VALUES (:user_id, :credential_id, :public_key, :sign_count, :name)";
+                (user_id, user_handle, credential_id, public_key, sign_count, name)
+                VALUES (:user_id, :user_handle, :credential_id, :public_key, :sign_count, :name)";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             'user_id'       => $userId,
+            'user_handle'   => $row['user_handle'],
             'credential_id' => $row['credential_id'],
             'public_key'    => $row['public_key'],
             'sign_count'    => $row['sign_count'] ?? 0,
             'name'          => $row['name'],
         ]);
         return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * Return the existing user_handle for a user, or null if they have no
+     * passkeys yet. Used at registerOptions time so all credentials for one
+     * account share one handle (WebAuthn §5.4.3: "MUST be the same value for
+     * all credentials created for the same account"). First-time registrants
+     * get a freshly generated handle from the caller.
+     */
+    public function findUserHandleForUser(int $userId): ?string
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT user_handle FROM {$this->tableName} WHERE user_id = :uid LIMIT 1"
+        );
+        $stmt->execute(['uid' => $userId]);
+        $handle = $stmt->fetchColumn();
+        return ($handle === false || $handle === '') ? null : (string) $handle;
     }
 
     /**

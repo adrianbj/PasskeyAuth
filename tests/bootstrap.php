@@ -8,6 +8,7 @@ function pa_test_pdo(): PDO {
     $pdo->exec("CREATE TABLE passkey_auth (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id       INTEGER NOT NULL,
+        user_handle   BLOB NOT NULL,
         credential_id BLOB NOT NULL UNIQUE,
         public_key    BLOB NOT NULL,
         sign_count    INTEGER NOT NULL DEFAULT 0,

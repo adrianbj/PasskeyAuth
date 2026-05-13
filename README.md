@@ -68,7 +68,8 @@ The login endpoints are guest-reachable; the management endpoints are admin-gate
 - **Per-session rate limit** — 20 login attempts / 60s, applied to both `login/options` and `login/finish`
 - **Per-user passkey cap** — 25, enforced atomically via `SELECT ... FOR UPDATE`
 - **Signature-counter rollback rejection** — rejects clones, allows always-zero authenticators (e.g. iCloud Keychain)
-- **userHandle binding** — the credential's resident `userHandle` must match the credential row's user_id
+- **Opaque random user handle** — each account gets a 16-byte `random_bytes()` user handle (WebAuthn `user.id`) instead of the PW `user_id` so the value stored on the authenticator isn't a database primary key. Spec-aligned hygiene (WebAuthn §5.4.3); not a meaningful confidentiality boundary on its own (`user.name` is stored alongside the handle anyway). Per §5.4.3, one handle is shared across all of an account's credentials. Existing passkeys registered before 0.2.0 keep their legacy 4-byte handle and continue to work; no rotation needed.
+- **userHandle binding** — the credential's resident `userHandle` must equal the stored handle (constant-time compare)
 - **Cross-origin ceremonies rejected** — `clientDataJSON.crossOrigin === true` is refused
 - **Cascading deletes** — passkeys are removed when their owning user is trashed or deleted
 - **Trust-boundary enforcement** — even superuser-on-behalf registration binds the *acting* session user separately from the *target* user
@@ -107,7 +108,9 @@ Origins are accepted only over HTTPS, with a hard-coded carve-out for `localhost
 
 #### 5. Content-Security-Policy
 
-The module emits inline `<script>` blocks for client config (`window.PasskeyAuth = {...}`). If you deploy a strict CSP without `'unsafe-inline'`, the inline JSON will be blocked and passkey UI will break. See the class-level docblock in `PasskeyAuth.module.php` for workaround paths (nonce / dataset / scoped policy).
+Client config travels in `<script type="application/json" class="passkey-auth-config">…</script>` blocks, which are non-executable and pass strict `script-src 'self'` without needing `'unsafe-inline'` or a nonce. The external bootstrap (`/site/modules/PasskeyAuth/PasskeyAuth.js`) is `'self'`-allowed.
+
+Caveat: the registration banner emits a small inline `<style>` block (critical CSS for FOUC). A strict `style-src 'self'` policy blocks it — the banner still works, but flashes unstyled briefly until the linked stylesheet loads. Either allow `'unsafe-inline'` for styles or accept the brief flash.
 
 #### 6. Database
 
@@ -135,7 +138,7 @@ Login failure categories:
 | `malformed_b64` | Base64url decode of `rawId` / `clientDataJSON` / `authenticatorData` / `signature` failed |
 | `unknown_credential` | `rawId` not in DB (most common probe signal) |
 | `missing_user_handle` | `response.userHandle` empty/non-string |
-| `user_handle_mismatch` | userHandle decoded but doesn't match credential's user_id |
+| `user_handle_mismatch` | userHandle decoded but doesn't match the credential row's stored handle |
 | `orphaned_credential` | Credential row's user_id doesn't resolve to a user |
 | `user_trashed` | User is in trash |
 | `role_denied` | User's role is no longer in the allow-list |

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "Bash(xargs curl *)",
+      "Bash(curl -s https://raw.githubusercontent.com/clipmagic/LoginPassKey/main/LoginPassKey.module)",
+      "Read(//tmp/**)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"{x['type']:5} {x['size']:>8} {x['name']}\\\\\"\\) for x in data]\")",
+      "Bash(./vendor/bin/phpunit)",
+      "Bash(./vendor/bin/phpunit --testdox)",
+      "Bash(php *)",
+      "Bash(grep *)"
+    ]
+  }
+}
