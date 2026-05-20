@@ -8,3 +8,9 @@
 !/vendor/autoload.php
 !/vendor/composer/
 !/vendor/lbuchs/
+
+# Autoload file that only appears with dev deps installed (phpunit has a
+# `files` autoload entry). The tracked vendor/composer/autoload_*.php files
+# are at --no-dev state and don't reference it. Suppress locally so it
+# doesn't show as untracked after `composer install`.
+/vendor/composer/autoload_files.php
