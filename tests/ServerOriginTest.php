@@ -67,6 +67,16 @@ final class ServerOriginTest extends TestCase
         $this->expectOriginFailure($server, ['origin' => 'https://evilexample.com'], 'Origin does not match');
     }
 
+    public function testRejectsHyphenatedLookalikeHost(): void
+    {
+        // lbuchs/WebAuthn#122: the unanchored `/preg_quote($rpId)$/i` regex
+        // accepts any host ending with the rpId string, including hyphenated
+        // lookalikes like `evil-example.com`. The dot-boundary requirement
+        // in assertOrigin must reject these.
+        $server = new Server('Test', 'example.com');
+        $this->expectOriginFailure($server, ['origin' => 'https://evil-example.com'], 'Origin does not match');
+    }
+
     public function testRejectsSiblingHost(): void
     {
         $server = new Server('Test', 'example.com');
@@ -200,6 +210,64 @@ final class ServerOriginTest extends TestCase
         // Strict `=== true` comparison: non-true values pass through.
         $server = new Server('Test', 'example.com');
         $this->invokeAssertOrigin($server, ['origin' => 'https://example.com', 'crossOrigin' => 'true']);
+        $this->assertTrue(true);
+    }
+
+    public function testRejectsTokenBindingStatusPresent(): void
+    {
+        // lbuchs/WebAuthn#130: status "present" is an unverifiable claim
+        // because we don't (and can't, in PHP) verify the TLS Token Binding ID.
+        // Token Binding was removed from L3 and no major browser supports it,
+        // but a non-conformant client that sends `present` must not be silently
+        // accepted as same-origin.
+        $server = new Server('Test', 'example.com');
+        $this->expectOriginFailure(
+            $server,
+            ['origin' => 'https://example.com', 'tokenBinding' => ['status' => 'present', 'id' => 'abc']],
+            'Token binding'
+        );
+    }
+
+    public function testAcceptsTokenBindingStatusSupported(): void
+    {
+        // `supported` means the browser supports Token Binding but didn't use
+        // it for this connection — no claim to verify, safe to accept.
+        $server = new Server('Test', 'example.com');
+        $this->invokeAssertOrigin(
+            $server,
+            ['origin' => 'https://example.com', 'tokenBinding' => ['status' => 'supported']]
+        );
+        $this->assertTrue(true);
+    }
+
+    public function testAcceptsTokenBindingStatusNotSupported(): void
+    {
+        $server = new Server('Test', 'example.com');
+        $this->invokeAssertOrigin(
+            $server,
+            ['origin' => 'https://example.com', 'tokenBinding' => ['status' => 'not-supported']]
+        );
+        $this->assertTrue(true);
+    }
+
+    public function testAcceptsTokenBindingAbsent(): void
+    {
+        // The field is optional in the spec; absence means no claim.
+        $server = new Server('Test', 'example.com');
+        $this->invokeAssertOrigin($server, ['origin' => 'https://example.com']);
+        $this->assertTrue(true);
+    }
+
+    public function testIgnoresTokenBindingWithoutStatus(): void
+    {
+        // Malformed tokenBinding (no `status` field) is not actionable — the
+        // spec only triggers verification when status === 'present'. Don't
+        // invent rejections beyond the spec.
+        $server = new Server('Test', 'example.com');
+        $this->invokeAssertOrigin(
+            $server,
+            ['origin' => 'https://example.com', 'tokenBinding' => ['id' => 'abc']]
+        );
         $this->assertTrue(true);
     }
 }

@@ -4,6 +4,14 @@ namespace PasskeyAuth;
 
 use lbuchs\WebAuthn\WebAuthn;
 
+// TODO: revisit dependency. Upstream lbuchs/WebAuthn is effectively dormant;
+// Scott Helme's report-uri/passkeys-php fork (created 2026-05-13) ships the
+// same security fixes we wrap here (issues #122, #124, #126, #128, #130, #132)
+// and strips attestation handling we don't use. Not switching yet: the fork
+// is one week old with a single maintainer and a worse bus-factor than the
+// established dep, and our assertOrigin is stricter than the fork's fix
+// (rejects userinfo / bracketed IPv6, normalises trailing dot). Re-evaluate
+// once the fork gains adoption or upstream is formally archived.
 final class Server
 {
     private WebAuthn $webauthn;
@@ -53,6 +61,20 @@ final class Server
         // field is optional in the spec; only reject when it's explicitly true.
         if (isset($data['crossOrigin']) && $data['crossOrigin'] === true) {
             throw new \RuntimeException('Cross-origin ceremony rejected');
+        }
+
+        // lbuchs/WebAuthn#130: reject tokenBinding.status === 'present'. Per
+        // WebAuthn L2 §7.1/§7.2, when the field is 'present' the RP must
+        // verify tokenBinding.id matches the TLS Token Binding ID — which we
+        // can't do from PHP without TLS-stack support. Token Binding was
+        // removed from L3 and no major browser sends it, but a non-conformant
+        // client must not be allowed to assert an unverifiable claim.
+        // 'supported' / 'not-supported' carry no claim and are safely ignored.
+        if (
+            isset($data['tokenBinding']['status'])
+            && $data['tokenBinding']['status'] === 'present'
+        ) {
+            throw new \RuntimeException('Token binding not supported');
         }
 
         // SEC-E H-A2: explicitly reject origin shapes parse_url silently

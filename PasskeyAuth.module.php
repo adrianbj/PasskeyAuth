@@ -38,7 +38,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             'title'    => 'Passkey Auth',
             'summary'  => 'WebAuthn passkey login for ProcessWire admin',
             'author'   => 'Adrian Jones',
-            'version'  => '0.2.0',
+            'version'  => '0.2.1',
             'icon'     => 'key',
             // autoload=true is required: the login URL hooks must be registered
             // before page resolution so guest POSTs to /passkey-auth/login/*
