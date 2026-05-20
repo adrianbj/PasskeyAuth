@@ -7,8 +7,5 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'lbuchs\\WebAuthn\\' => array($vendorDir . '/lbuchs/webauthn/src'),
-    'PhpParser\\' => array($vendorDir . '/nikic/php-parser/lib/PhpParser'),
-    'PasskeyAuth\\Tests\\' => array($baseDir . '/tests'),
     'PasskeyAuth\\' => array($baseDir . '/src'),
-    'DeepCopy\\' => array($vendorDir . '/myclabs/deep-copy/src/DeepCopy'),
 );

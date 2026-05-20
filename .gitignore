@@ -1,0 +1,10 @@
+.claude/settings.local.json
+.phpunit.result.cache
+
+# Only ship runtime composer deps. Anything new under vendor/ defaults to
+# ignored; allowlist what's needed at install time. Run `composer install`
+# (with dev) locally to get phpunit back for tests.
+/vendor/*
+!/vendor/autoload.php
+!/vendor/composer/
+!/vendor/lbuchs/
