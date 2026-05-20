@@ -10,7 +10,13 @@
       "Bash(./vendor/bin/phpunit)",
       "Bash(./vendor/bin/phpunit --testdox)",
       "Bash(php *)",
-      "Bash(grep *)"
+      "Bash(grep *)",
+      "Bash(gh issue *)",
+      "Bash(xargs ls -la)",
+      "Bash(./vendor/bin/phpunit --filter ServerOriginTest)",
+      "Bash(./vendor/bin/phpunit --filter 'TokenBinding')",
+      "Bash(python3 -c \"import json,sys; [print\\(c['sha'][:8], c['commit']['message'].split\\(chr\\(10\\)\\)[0]\\) for c in json.load\\(sys.stdin\\)]\")",
+      "Bash(git rm *)"
     ]
   }
 }
