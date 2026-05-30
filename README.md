@@ -63,7 +63,7 @@ The login endpoints are guest-reachable; the management endpoints are admin-gate
 
 ### Defenses
 
-- **Anchored origin validation** — works around the unanchored regex in `lbuchs/webauthn` so `evilexample.com` cannot match an RP ID of `example.com`. 24 unit tests cover the gate.
+- **Anchored origin validation** — works around the unanchored regex in `lbuchs/webauthn` so `evilexample.com` cannot match an RP ID of `example.com`. 29 unit tests cover the gate.
 - **CSRF on every mutation** — register, rename, delete, banner-dismiss
 - **Per-session rate limit** — 20 login attempts / 60s, applied to both `login/options` and `login/finish`
 - **Per-user passkey cap** — 25, enforced atomically via `SELECT ... FOR UPDATE`
@@ -72,6 +72,7 @@ The login endpoints are guest-reachable; the management endpoints are admin-gate
 - **userHandle binding** — the credential's resident `userHandle` must equal the stored handle (constant-time compare)
 - **Cross-origin ceremonies rejected** — `clientDataJSON.crossOrigin === true` is refused
 - **Cascading deletes** — passkeys are removed when their owning user is trashed or deleted
+- **Eligibility re-checked at login** — login is refused for trashed, unpublished (disabled), or no-longer-allow-listed users, and fails closed if PW core itself declines the forced login
 - **Trust-boundary enforcement** — even superuser-on-behalf registration binds the *acting* session user separately from the *target* user
 - **User verification required** — `userVerification` is hardcoded to `required`; present-but-unverified assertions are refused. This is the W3C / FIDO Alliance posture for passkey deployments.
 
@@ -105,6 +106,14 @@ Suggested tools:
 #### 4. HTTPS in production
 
 Origins are accepted only over HTTPS, with a hard-coded carve-out for `localhost` and `127.0.0.1` for development. Browsers also refuse to expose the WebAuthn API on insecure origins (other than localhost).
+
+**Session cookie flags.** WebAuthn's phishing resistance and this module's post-login session-ID rotation only hold up if the session cookie itself can't be captured or injected over an insecure channel. ProcessWire's defaults are already correct — **do not disable them**:
+
+- `$config->sessionCookieSecure = 1` (default) — cookie sent only over HTTPS
+- `$config->sessionCookieSameSite = 'Lax'` (default) — `'Strict'` is also fine
+- `HttpOnly`, `$config->sessionChallenge`, and `$config->sessionFingerprint` are on by default
+
+Footgun: the `Secure` flag is only actually applied when ProcessWire recognises the request as HTTPS (`$secure = sessionCookieSecure ? (bool) $config->https : false`). **Behind a reverse proxy / load balancer that terminates TLS**, if PW doesn't see the request as HTTPS the session cookie ships *without* `Secure` even though `sessionCookieSecure = 1`. Ensure your proxy forwards the scheme and that `$config->https` resolves true (correct `$config->httpHosts`, trusted proxy headers) — otherwise the session-fixation rotation is rotating a cookie an on-path attacker can still read.
 
 #### 5. Content-Security-Policy
 
@@ -141,9 +150,11 @@ Login failure categories:
 | `user_handle_mismatch` | userHandle decoded but doesn't match the credential row's stored handle |
 | `orphaned_credential` | Credential row's user_id doesn't resolve to a user |
 | `user_trashed` | User is in trash |
+| `user_unpublished` | User is unpublished (disabled); login refused until re-published |
 | `role_denied` | User's role is no longer in the allow-list |
 | `signature_verification_failed` | lbuchs library threw during processGet |
 | `counter_rollback` | Authenticator's signCount went backwards (clone indicator) |
+| `force_login_refused` | PW core declined the forced login (e.g. an eligibility gate not mirrored here); fails closed |
 | `already_logged_in` | Session is already authenticated |
 | `rate_limited` | Per-session limit exceeded |
 
@@ -163,7 +174,7 @@ composer install
 ./vendor/bin/phpunit
 ```
 
-53 unit tests cover storage CRUD, rate limiting, name sanitisation, WebAuthn server option generation, and the origin-check gate (24 cases including evil-prefix host, FQDN trailing dot, scheme allow-list, userinfo / IPv6 / cross-origin rejections).
+65 unit tests cover storage CRUD, rate limiting, name sanitisation, WebAuthn server option generation, and the origin-check gate (29 cases including evil-prefix host, FQDN trailing dot, scheme allow-list, userinfo / IPv6 / cross-origin rejections).
 
 End-to-end browser testing is manual — see [`docs/`](./docs/) for the test pass checklist.
 

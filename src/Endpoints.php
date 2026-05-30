@@ -649,6 +649,21 @@ final class Endpoints
             $this->logLoginFailure('user_trashed', ['credential_id' => (int) $row['id'], 'user_id' => $userId]);
             return $this->error('Authentication failed', 'auth_failed', 400);
         }
+        // Reject login for unpublished users. PW core would refuse anyway —
+        // forceLogin() -> login(..., $force=true) still runs Session::allowLogin(),
+        // which returns false for unpublished users (wire/core/Session.php), and
+        // that check precedes the $force branch. But core fails *silently*
+        // (forceLogin returns null) while this endpoint ignores that return value
+        // and would still report success. Guarding here makes the module
+        // self-sufficient: fail fast and closed before crypto, with a logged
+        // reason and a clean auth_failed, instead of depending on core's internal
+        // branch ordering. Unlike trash, unpublish is a reversible disable —
+        // re-publishing the user restores passkey access with no re-enrollment.
+        if ($user->isUnpublished()) {
+            $this->clearLoginSession();
+            $this->logLoginFailure('user_unpublished', ['credential_id' => (int) $row['id'], 'user_id' => $userId]);
+            return $this->error('Authentication failed', 'auth_failed', 400);
+        }
         if (!$this->isAllowedByRole($user)) {
             $this->clearLoginSession();
             $this->logLoginFailure('role_denied', ['credential_id' => (int) $row['id'], 'user_id' => $userId]);
@@ -706,13 +721,44 @@ final class Endpoints
         $this->storage->touchLastUsed((int) $row['id'], $received);
         // SEC-D M3 / SEC-E H-A1: clear any stale registration / banner-dismissal
         // state from the prior session occupant BEFORE forceLogin so the new
-        // identity starts with a clean PasskeyAuth namespace. We rely on PW's
-        // Session::forceLogin to perform the session-id rotation (it does in
-        // PW 3.0.x). An explicit session_regenerate_id here would either be a
-        // redundant no-op or, on some session handlers, destroy the file PW
-        // just wrote into — so we trust forceLogin and document the assumption.
+        // identity starts with a clean PasskeyAuth namespace.
         $this->clearAllSessionState();
-        $this->wire->wire('session')->forceLogin($user);
+
+        $preLoginSid = session_id();
+        $loggedIn = $this->wire->wire('session')->forceLogin($user);
+
+        // forceLogin returns the User on success, or null when PW core declines
+        // the login. core's Session::login() runs its eligibility gate
+        // (Session::allowLogin) even under $force=true, and a refusal surfaces
+        // only as a null return. Our explicit guards above already cover the
+        // known refusal cases (trashed / unpublished / role), but if core
+        // declines for any other reason we must NOT report success: the session
+        // has no authenticated user, so a {ok, redirect} would bounce the client
+        // off the admin straight back to login with no explanation. Fail closed
+        // with a logged reason instead. (clearAllSessionState above already
+        // cleared the login challenge, so no further teardown is needed here.)
+        if (!$loggedIn || !$loggedIn->id || (int) $loggedIn->id !== $userId) {
+            $this->logLoginFailure('force_login_refused', ['credential_id' => (int) $row['id'], 'user_id' => $userId]);
+            return $this->error('Authentication failed', 'auth_failed', 400);
+        }
+
+        // Session-fixation defense. PW's Session::forceLogin rotates the session
+        // id on success (it does in PW 3.0.x), which is what actually closes the
+        // fixation window. Rather than trust that silently, capture the id across
+        // the call and, if it did NOT rotate — a future PW change, or a
+        // non-conformant custom session handler — regenerate explicitly. We only
+        // regenerate in the un-rotated case, so we never destroy a session file
+        // forceLogin has already moved data into (the concern that originally
+        // kept this check out). Guarded on an active native session, so a handler
+        // that bypasses PHP's session layer is a safe no-op rather than a fatal.
+        if (
+            $preLoginSid !== ''
+            && session_status() === PHP_SESSION_ACTIVE
+            && session_id() === $preLoginSid
+        ) {
+            session_regenerate_id(true);
+            $this->wire->wire('log')->save('passkey-auth', 'forceLogin did not rotate session id; regenerated explicitly (session-fixation guard)');
+        }
 
         return $this->respond([
             'ok' => true,
