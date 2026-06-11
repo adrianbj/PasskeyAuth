@@ -781,9 +781,12 @@ final class Endpoints
         $row = $this->storage->findById($id);
         if (!$row) return $this->error('Not found', 'not_found', 404);
         $target = $this->targetUser((int) $row['user_id']);
-        if (!$target) return $this->error('Forbidden', 'forbidden', 403);
+        // Existence oracle: a non-owner probing ids must get a response
+        // byte-identical to the row-not-found case, so 404 — not 403.
+        if (!$target) return $this->error('Not found', 'not_found', 404);
         // H5: role allow-list re-check. Covers users whose role was revoked after
         // registration — they should not be able to manage stale credentials.
+        // (Requester is owner or superuser by here, so 403 leaks nothing.)
         if (!$this->isAllowedByRole($target)) return $this->error('Forbidden', 'forbidden', 403);
         // H6: if the client sent a userId body field, it must match the row owner.
         if (array_key_exists('userId', $body) && $body['userId'] !== null) {
@@ -813,9 +816,12 @@ final class Endpoints
         $row = $this->storage->findById($id);
         if (!$row) return $this->error('Not found', 'not_found', 404);
         $target = $this->targetUser((int) $row['user_id']);
-        if (!$target) return $this->error('Forbidden', 'forbidden', 403);
+        // Existence oracle: a non-owner probing ids must get a response
+        // byte-identical to the row-not-found case, so 404 — not 403.
+        if (!$target) return $this->error('Not found', 'not_found', 404);
         // H5: role allow-list re-check. Covers users whose role was revoked after
         // registration — they should not be able to manage stale credentials.
+        // (Requester is owner or superuser by here, so 403 leaks nothing.)
         if (!$this->isAllowedByRole($target)) return $this->error('Forbidden', 'forbidden', 403);
         // H6: if the client sent a userId body field, it must match the row owner.
         if (array_key_exists('userId', $body) && $body['userId'] !== null) {
