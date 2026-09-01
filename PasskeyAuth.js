@@ -271,7 +271,19 @@
     // manage UI auto-focuses the rename input on the new row so the user can
     // override the auto-name in two clicks regardless of source device.
 
+    // WebAuthn only exists in a secure context (https, or localhost). Without
+    // this guard `navigator.credentials` is undefined and .create() throws a
+    // raw "reading 'create' of undefined" TypeError. Throw a friendly message
+    // instead — both callers (manage add + admin banner) route it through their
+    // catch → friendlyRegistrationError → setStatus.
+    function passkeysSupported() {
+        return !!(window.PublicKeyCredential && window.isSecureContext);
+    }
+
     async function registrationFlow(name, userId = null) {
+        if (!passkeysSupported()) {
+            throw new Error('Passkeys need a secure (https) connection in a supported browser.');
+        }
         const optsRes = await postJSON('register-options', { name, userId });
         const opts = decodePublicKeyOptions({ publicKey: optsRes.options.publicKey });
         const cred = await navigator.credentials.create({ publicKey: opts.publicKey });
@@ -378,6 +390,14 @@
                 doDelete(id, li);
             }
         });
+
+        // Don't let a user click into a flow that can't work: in a non-secure
+        // context (e.g. plain http) registration would throw. Rename/delete of
+        // existing passkeys still work, so only the add button is disabled.
+        if (addBtn && !passkeysSupported()) {
+            addBtn.disabled = true;
+            setStatus('Passkeys need a secure (https) connection in a supported browser.');
+        }
 
         if (addBtn) {
             addBtn.addEventListener('click', async () => {
