@@ -142,6 +142,9 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         header('Content-Type: application/json');
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: no-store');
+        header('Pragma: no-cache');
+        header('Referrer-Policy: no-referrer');
+        header('X-Frame-Options: DENY');
         return '{"error":"Forbidden","code":"forbidden"}';
     }
 
