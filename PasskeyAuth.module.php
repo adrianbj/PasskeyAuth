@@ -121,6 +121,33 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
     }
 
     /**
+     * The manage-section markup shared by the admin fieldset and frontend
+     * callers: stylesheet link, server-rendered rows, add button, status line.
+     * Returns '' when the user has nothing to manage and no eligibility to
+     * register — callers should render nothing. Config/script injection is the
+     * caller's job: each surface has its own CSP story (the admin inlines
+     * freely, the frontend must attach nonces).
+     */
+    public function renderManageMarkup(\ProcessWire\User $user): string
+    {
+        $storage = new \PasskeyAuth\Storage($this->wire('database')->pdo(), self::TABLE_NAME);
+        $rows = $storage->listForUser($user->id);
+        if (count($rows) === 0 && !$this->isUserInAllowedRoles($user)) return '';
+
+        $cssUrl = $this->wire('config')->urls($this) . 'PasskeyAuth.css';
+        $rowsHtml = '';
+        foreach ($rows as $row) {
+            $rowsHtml .= $this->renderManageRow($row);
+        }
+        return '<link rel="stylesheet" href="' . htmlspecialchars($cssUrl) . '">'
+            . '<div class="passkey-auth-manage" data-user-id="' . (int) $user->id . '">'
+            . '<ul class="passkey-auth-list">' . $rowsHtml . '</ul>'
+            . '<button type="button" data-passkey-auth-action="add" class="ui-button">Add a passkey</button>'
+            . '<p class="passkey-auth-status" role="status" aria-live="polite"></p>'
+            . '</div>';
+    }
+
+    /**
      * Site-overridable eligibility check for FRONTEND passkey registration.
      * The admin surface (ProcessPasskeyAuth) is not affected. Rename and
      * delete are deliberately not gated: a user who loses eligibility must
@@ -372,13 +399,8 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $rows    = $storage->listForUser($editedUser->id);
         $count   = count($rows);
 
-        // Hide the fieldset when the edited user has no allow-listed role AND
-        // no existing passkeys: registration would be rejected by Endpoints
-        // (role_denied) and there's nothing to manage. If they DO have stored
-        // passkeys but lost role access, still render the fieldset so the
-        // admin can revoke them — never strand credentials in the DB without
-        // a UI to remove them.
-        if ($count === 0 && !$this->isUserInAllowedRoles($editedUser)) return;
+        $inner = $this->renderManageMarkup($editedUser);
+        if ($inner === '') return;
 
         $fieldset = $modules->get('InputfieldFieldset');
         $fieldset->name = 'passkey_auth_manage';
@@ -390,26 +412,11 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
 
         $apiUrl = $this->manageApiUrl();
         $jsUrl  = $this->assetUrl('PasskeyAuth.js');
-        $cssUrl = $this->assetUrl('PasskeyAuth.css');
         $csrf   = $session->CSRF->getTokenValue('passkey-auth');
-
-        // Render existing rows server-side so they appear immediately with no
-        // flash of empty list. JS appends rows for newly-added passkeys using
-        // the same markup shape (see renderRow() in PasskeyAuth.js — keep them
-        // aligned).
-        $rowsHtml = '';
-        foreach ($rows as $row) {
-            $rowsHtml .= $this->renderManageRow($row);
-        }
 
         $markup = $modules->get('InputfieldMarkup');
         $markup->name = 'passkey_auth_manage_markup';
-        $markup->value = '<link rel="stylesheet" href="' . htmlspecialchars($cssUrl) . '">'
-            . '<div class="passkey-auth-manage" data-user-id="' . (int) $editedUser->id . '">'
-            . '<ul class="passkey-auth-list">' . $rowsHtml . '</ul>'
-            . '<button type="button" data-passkey-auth-action="add" class="ui-button">Add a passkey</button>'
-            . '<p class="passkey-auth-status" role="status" aria-live="polite"></p>'
-            . '</div>';
+        $markup->value = $inner;
         try {
             // SEC-E M-A4: do not include userName — JS doesn't read it. Inline
             // payloads should carry only what the client actually consumes to
