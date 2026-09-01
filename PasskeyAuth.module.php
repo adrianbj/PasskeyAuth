@@ -149,30 +149,15 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
 
     /**
      * Site-overridable eligibility check for FRONTEND passkey registration.
-     * The admin surface (ProcessPasskeyAuth) is not affected. Rename and
+     * Applies to the target user on every registration surface — the frontend
+     * URL hooks and the admin dispatcher both run through
+     * Endpoints::registerOptions/registerFinish, which consult this. Rename and
      * delete are deliberately not gated: a user who loses eligibility must
      * still be able to revoke stored credentials.
      */
-    public function ___allowFrontendRegistration(\ProcessWire\User $user): bool
+    public function ___allowPasskeyRegistration(\ProcessWire\User $user): bool
     {
         return true;
-    }
-
-    /**
-     * Deny response for frontend registration, or null when allowed. Shape
-     * matches Endpoints::error() so PasskeyAuth.js surfaces it identically.
-     */
-    private function frontendRegisterGate(): ?string
-    {
-        if ($this->allowFrontendRegistration($this->wire('user'))) return null;
-        http_response_code(403);
-        header('Content-Type: application/json');
-        header('X-Content-Type-Options: nosniff');
-        header('Cache-Control: no-store');
-        header('Pragma: no-cache');
-        header('Referrer-Policy: no-referrer');
-        header('X-Frame-Options: DENY');
-        return '{"error":"Forbidden","code":"forbidden"}';
     }
 
     /**
@@ -268,14 +253,16 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         // Frontend management endpoints: the same Endpoints logic ProcessPasskeyAuth
         // dispatches, exposed on the neutral login-API path so non-admin pages can
         // offer passkey management without ever referencing the admin URL. Off by
-        // default; a site enabling this should usually also hook
-        // allowFrontendRegistration() to decide who may enroll from the frontend.
+        // default. Registration eligibility (the allowPasskeyRegistration hookable)
+        // is enforced inside Endpoints, so it applies here and on the admin
+        // dispatcher alike — a site enabling this should hook that method to
+        // decide who may enroll.
         if ($this->enableFrontendEndpoints) {
             $this->wire()->addHook("{$prefix}/manage/register-options", function() {
-                return $this->frontendRegisterGate() ?? $this->buildEndpoints()->registerOptions();
+                return $this->buildEndpoints()->registerOptions();
             });
             $this->wire()->addHook("{$prefix}/manage/register-finish", function() {
-                return $this->frontendRegisterGate() ?? $this->buildEndpoints()->registerFinish();
+                return $this->buildEndpoints()->registerFinish();
             });
             $this->wire()->addHook("{$prefix}/manage/rename", function() {
                 return $this->buildEndpoints()->rename();

@@ -63,7 +63,7 @@ They run the same `Endpoints` logic as the admin surface (POST + login + CSRF + 
 Two hooks let a site customize behavior:
 
 - **`___loginRedirectUrl(User $user): string`** — where a successful passkey login sends the user. Defaults to the admin root; hook it to route non-admin audiences (e.g. subscribers) elsewhere.
-- **`___allowFrontendRegistration(User $user): bool`** — gates *frontend registration* only, default `true`. A site enabling the frontend endpoints should generally hook this to restrict who may enroll a new passkey from a non-admin page. Rename and delete are deliberately **not** gated by this hook: a user who later loses eligibility must still be able to revoke passkeys they already registered, so credentials never get stranded with no UI to remove them.
+- **`___allowPasskeyRegistration(User $user): bool`** — gates who may enroll a new passkey, default `true`. Enforced inside `Endpoints::registerOptions/registerFinish`, so it applies on **every** registration surface — the frontend URL hooks and the admin dispatcher alike — not just non-admin pages. Hook it to restrict enrollment for specific accounts (e.g. deny users whose identity is federated upstream and can't be backed by a local passkey). Rename and delete are deliberately **not** gated: a user who later loses eligibility must still be able to revoke passkeys they already registered, so credentials never get stranded with no UI to remove them.
 
 ## Security
 
