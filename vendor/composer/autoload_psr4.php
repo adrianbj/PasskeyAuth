@@ -6,6 +6,6 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
-    'lbuchs\\WebAuthn\\' => array($vendorDir . '/lbuchs/webauthn/src'),
+    'ReportUri\\Passkeys\\' => array($vendorDir . '/report-uri/passkeys-php/src'),
     'PasskeyAuth\\' => array($baseDir . '/src'),
 );

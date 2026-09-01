@@ -7,7 +7,7 @@
 /vendor/*
 !/vendor/autoload.php
 !/vendor/composer/
-!/vendor/lbuchs/
+!/vendor/report-uri/
 
 # Autoload file that only appears with dev deps installed (phpunit has a
 # `files` autoload entry). The tracked vendor/composer/autoload_*.php files

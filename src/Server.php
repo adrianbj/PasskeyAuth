@@ -2,16 +2,15 @@
 
 namespace PasskeyAuth;
 
-use lbuchs\WebAuthn\WebAuthn;
+use ReportUri\Passkeys\WebAuthn;
 
-// TODO: revisit dependency. Upstream lbuchs/WebAuthn is effectively dormant;
-// Scott Helme's report-uri/passkeys-php fork (created 2026-05-13) ships the
-// same security fixes we wrap here (issues #122, #124, #126, #128, #130, #132)
-// and strips attestation handling we don't use. Not switching yet: the fork
-// is one week old with a single maintainer and a worse bus-factor than the
-// established dep, and our assertOrigin is stricter than the fork's fix
-// (rejects userinfo / bracketed IPv6, normalises trailing dot). Re-evaluate
-// once the fork gains adoption or upstream is formally archived.
+// WebAuthn crypto is delegated to report-uri/passkeys-php — Report URI's
+// maintained fork of the (dormant) lbuchs/WebAuthn. The fork folds in the
+// origin/RP-ID, cross-origin, token-binding, and backup-flag fixes and strips
+// the attestation handling this module doesn't use. assertOrigin() below is
+// kept deliberately: it is stricter than the library's origin check (rejects
+// userinfo / bracketed IPv6, normalises the trailing dot) and runs first as
+// defense-in-depth.
 final class Server
 {
     private WebAuthn $webauthn;
@@ -20,22 +19,23 @@ final class Server
     public function __construct(
         string $rpName,
         string $rpId,
-        array $allowedFormats = ['none', 'packed', 'apple']
     ) {
-        // 4th arg = $useBase64UrlEncoding. The WebAuthn constructor sets
-        // ByteBuffer::$useBase64UrlEncoding from this; without it, the lib defaults
+        // 3rd arg = $useBase64UrlEncoding. The WebAuthn constructor sets
+        // ByteBuffer::$useBase64UrlEncoding from this; without it the lib defaults
         // to false and serializes binary fields as =?BINARY?B?...?= which atob() rejects.
-        $this->webauthn = new WebAuthn($rpName, $rpId, $allowedFormats, true);
+        $this->webauthn = new WebAuthn($rpName, $rpId, true);
         $this->rpId = strtolower($rpId);
     }
 
     /**
-     * SEC-D H1: anchored origin validation. The lbuchs library uses an
-     * unanchored regex (`/preg_quote($rpId)$/i`) which accepts any origin
-     * whose host *ends in* the rpId — e.g. an rpId of `example.com` matches
-     * `evilexample.com`. We extract the origin from clientDataJSON ourselves
-     * and require either an exact host match or a proper subdomain (host
-     * ends with `.` + rpId). Localhost is allowed over http for development.
+     * SEC-D H1: anchored origin validation, run BEFORE the library's own check
+     * as defense-in-depth. The report-uri fork already anchors the RP-ID match
+     * (exact host or a proper subdomain), fixing the old lbuchs unanchored-regex
+     * bug where `example.com` matched `evilexample.com`. We keep our own check
+     * because it is stricter still: it extracts the origin from clientDataJSON,
+     * requires exact host or `.`-suffix subdomain, rejects userinfo and bracketed
+     * IPv6 origins, and normalises a trailing dot. Localhost is allowed over http
+     * for development.
      *
      * @throws \RuntimeException if origin is missing/malformed/unauthorized
      */
@@ -157,7 +157,7 @@ final class Server
             $userDisplayName,
             30,                                  // timeout seconds — caller-overridable later
             $requireResidentKey,
-            'required',
+            true,   // fork: UV param is bool
             null,                                // crossPlatformAttachment: null = any (platform + roaming). true = roaming only. false = platform only.
             $excludeCredentialIds
         );
@@ -180,7 +180,7 @@ final class Server
             true,   // typeBle
             true,   // typeHybrid
             true,   // typeInt
-            'required'
+            true    // fork: UV param is bool
         );
         return [
             'options'   => $args,
@@ -195,16 +195,16 @@ final class Server
      * @param string $attestationObject Raw attestationObject bytes.
      * @param string $challenge         Original challenge bytes (server-side).
      * @return array{credentialId: string, publicKey: string, signCount: int}
-     * @throws \lbuchs\WebAuthn\WebAuthnException on attestation verification failure
+     * @throws \ReportUri\Passkeys\WebAuthnException on attestation verification failure
      */
     public function verifyRegistration(
         string $clientDataJson,
         string $attestationObject,
         string $challenge,
     ): array {
-        // SEC-D H1: anchored origin check before delegating to lbuchs.
+        // SEC-D H1: anchored origin check before delegating to the WebAuthn library.
         $this->assertOrigin($clientDataJson);
-        // Note: lbuchs lib has no setChallenge(); challenge is passed directly to processCreate.
+        // Note: the WebAuthn library has no setChallenge(); challenge is passed directly to processCreate.
         // UV is required (see registrationOptions); the bool here is the lib's
         // requireUserVerification flag — true means reject assertions without UV.
         $data = $this->webauthn->processCreate(
@@ -213,7 +213,6 @@ final class Server
             $challenge,
             true,                                // requireUserVerification
             true,                                // requireUserPresent
-            true,                                // failIfRootMismatch
         );
 
         return [
@@ -234,7 +233,7 @@ final class Server
      * @param string      $challenge         Original challenge bytes.
      * @param int         $storedSignCount   Last seen signature counter for the credential.
      * @return array{signCount: int}
-     * @throws \lbuchs\WebAuthn\WebAuthnException on verification failure
+     * @throws \ReportUri\Passkeys\WebAuthnException on verification failure
      */
     public function verifyLogin(
         string $clientDataJson,
@@ -245,10 +244,10 @@ final class Server
         string $challenge,
         int $storedSignCount,
     ): array {
-        // SEC-D H1: anchored origin check before delegating to lbuchs.
+        // SEC-D H1: anchored origin check before delegating to the WebAuthn library.
         $this->assertOrigin($clientDataJson);
-        // Note: lbuchs lib has no setChallenge(); challenge is passed directly to processGet.
-        // C1 (post-review): processGet returns bool true on success — NOT an object.
+        // Note: the WebAuthn library has no setChallenge(); challenge is passed directly to processGet.
+        // processGet returns bool true on success — NOT an object.
         // The authenticator-reported counter is exposed via getSignatureCounter() which
         // returns ?int (null when the authenticator reports 0, e.g. iCloud Keychain).
         // Falling back to $storedSignCount in the null case preserves existing rollback

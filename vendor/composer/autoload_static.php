@@ -4,12 +4,12 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit17b082ed3c7dd89aa84f69921f3ade5e
+class ComposerStaticInit8220661e298772e33a4addc52b63c90d
 {
     public static $prefixLengthsPsr4 = array (
-        'l' =>
+        'R' =>
         array (
-            'lbuchs\\WebAuthn\\' => 16,
+            'ReportUri\\Passkeys\\' => 19,
         ),
         'P' =>
         array (
@@ -18,9 +18,9 @@ class ComposerStaticInit17b082ed3c7dd89aa84f69921f3ade5e
     );
 
     public static $prefixDirsPsr4 = array (
-        'lbuchs\\WebAuthn\\' =>
+        'ReportUri\\Passkeys\\' =>
         array (
-            0 => __DIR__ . '/..' . '/lbuchs/webauthn/src',
+            0 => __DIR__ . '/..' . '/report-uri/passkeys-php/src',
         ),
         'PasskeyAuth\\' =>
         array (
@@ -35,9 +35,9 @@ class ComposerStaticInit17b082ed3c7dd89aa84f69921f3ade5e
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit17b082ed3c7dd89aa84f69921f3ade5e::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit17b082ed3c7dd89aa84f69921f3ade5e::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit17b082ed3c7dd89aa84f69921f3ade5e::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit8220661e298772e33a4addc52b63c90d::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit8220661e298772e33a4addc52b63c90d::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit8220661e298772e33a4addc52b63c90d::$classMap;
 
         }, null, ClassLoader::class);
     }

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<!--
+Copyright (C) 2022 Lukas Buchs
+license https://github.com/report-uri/passkeys-php/blob/master/LICENSE MIT
+-->
+<html>
+    <head>
+        <title>report-uri/passkeys-php Test</title>
+        <meta charset="UTF-8">
+        <script>
+
+        /**
+         * creates a new FIDO2 registration
+         * @returns {undefined}
+         */
+        async function createRegistration() {
+            try {
+
+                // check browser support
+                if (!window.fetch || !navigator.credentials || !navigator.credentials.create) {
+                    throw new Error('Browser not supported.');
+                }
+
+                // get create args
+                let rep = await window.fetch('server.php?fn=getCreateArgs' + getGetParams(), {method:'GET', cache:'no-cache'});
+                const createArgs = await rep.json();
+
+                // error handling
+                if (createArgs.success === false) {
+                    throw new Error(createArgs.msg || 'unknown error occured');
+                }
+
+                // replace binary base64 data with ArrayBuffer. a other way to do this
+                // is the reviver function of JSON.parse()
+                recursiveBase64StrToArrayBuffer(createArgs);
+
+                // create credentials
+                const cred = await navigator.credentials.create(createArgs);
+
+                // create object
+                const authenticatorAttestationResponse = {
+                    transports: cred.response.getTransports  ? cred.response.getTransports() : null,
+                    clientDataJSON: cred.response.clientDataJSON  ? arrayBufferToBase64(cred.response.clientDataJSON) : null,
+                    attestationObject: cred.response.attestationObject ? arrayBufferToBase64(cred.response.attestationObject) : null
+                };
+
+                // check auth on server side
+                rep = await window.fetch('server.php?fn=processCreate' + getGetParams(), {
+                    method  : 'POST',
+                    body    : JSON.stringify(authenticatorAttestationResponse),
+                    cache   : 'no-cache'
+                });
+                const authenticatorAttestationServerResponse = await rep.json();
+
+                // prompt server response
+                if (authenticatorAttestationServerResponse.success) {
+                    reloadServerPreview();
+                    window.alert(authenticatorAttestationServerResponse.msg || 'registration success');
+
+                } else {
+                    throw new Error(authenticatorAttestationServerResponse.msg);
+                }
+
+            } catch (err) {
+                reloadServerPreview();
+                window.alert(err.message || 'unknown error occured');
+            }
+        }
+
+
+        /**
+         * checks a FIDO2 registration
+         * @returns {undefined}
+         */
+        async function checkRegistration() {
+            try {
+
+                if (!window.fetch || !navigator.credentials || !navigator.credentials.create) {
+                    throw new Error('Browser not supported.');
+                }
+
+                // get check args
+                let rep = await window.fetch('server.php?fn=getGetArgs' + getGetParams(), {method:'GET',cache:'no-cache'});
+                const getArgs = await rep.json();
+
+                // error handling
+                if (getArgs.success === false) {
+                    throw new Error(getArgs.msg);
+                }
+
+                // replace binary base64 data with ArrayBuffer. a other way to do this
+                // is the reviver function of JSON.parse()
+                recursiveBase64StrToArrayBuffer(getArgs);
+
+                // check credentials with hardware
+                const cred = await navigator.credentials.get(getArgs);
+
+                // create object for transmission to server
+                const authenticatorAttestationResponse = {
+                    id: cred.rawId ? arrayBufferToBase64(cred.rawId) : null,
+                    clientDataJSON: cred.response.clientDataJSON  ? arrayBufferToBase64(cred.response.clientDataJSON) : null,
+                    authenticatorData: cred.response.authenticatorData ? arrayBufferToBase64(cred.response.authenticatorData) : null,
+                    signature: cred.response.signature ? arrayBufferToBase64(cred.response.signature) : null,
+                    userHandle: cred.response.userHandle ? arrayBufferToBase64(cred.response.userHandle) : null
+                };
+
+                // send to server
+                rep = await window.fetch('server.php?fn=processGet' + getGetParams(), {
+                    method:'POST',
+                    body: JSON.stringify(authenticatorAttestationResponse),
+                    cache:'no-cache'
+                });
+                const authenticatorAttestationServerResponse = await rep.json();
+
+                // check server response
+                if (authenticatorAttestationServerResponse.success) {
+                    reloadServerPreview();
+                    window.alert(authenticatorAttestationServerResponse.msg || 'login success');
+                } else {
+                    throw new Error(authenticatorAttestationServerResponse.msg);
+                }
+
+            } catch (err) {
+                reloadServerPreview();
+                window.alert(err.message || 'unknown error occured');
+            }
+        }
+
+        function clearRegistration() {
+            window.fetch('server.php?fn=clearRegistrations' + getGetParams(), {method:'GET',cache:'no-cache'}).then(function(response) {
+                return response.json();
+
+            }).then(function(json) {
+               if (json.success) {
+                   reloadServerPreview();
+                   window.alert(json.msg);
+               } else {
+                   throw new Error(json.msg);
+               }
+            }).catch(function(err) {
+                reloadServerPreview();
+                window.alert(err.message || 'unknown error occured');
+            });
+        }
+
+
+        /**
+         * convert RFC 1342-like base64 strings to array buffer
+         * @param {mixed} obj
+         * @returns {undefined}
+         */
+        function recursiveBase64StrToArrayBuffer(obj) {
+            let prefix = '=?BINARY?B?';
+            let suffix = '?=';
+            if (typeof obj === 'object') {
+                for (let key in obj) {
+                    if (typeof obj[key] === 'string') {
+                        let str = obj[key];
+                        if (str.substring(0, prefix.length) === prefix && str.substring(str.length - suffix.length) === suffix) {
+                            str = str.substring(prefix.length, str.length - suffix.length);
+
+                            let binary_string = window.atob(str);
+                            let len = binary_string.length;
+                            let bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++)        {
+                                bytes[i] = binary_string.charCodeAt(i);
+                            }
+                            obj[key] = bytes.buffer;
+                        }
+                    } else {
+                        recursiveBase64StrToArrayBuffer(obj[key]);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Convert a ArrayBuffer to Base64
+         * @param {ArrayBuffer} buffer
+         * @returns {String}
+         */
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            let bytes = new Uint8Array(buffer);
+            let len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode( bytes[ i ] );
+            }
+            return window.btoa(binary);
+        }
+
+        /**
+         * Get URL parameter
+         * @returns {String}
+         */
+        function getGetParams() {
+            let url = '';
+
+            url += '&requireResidentKey=' + (document.getElementById('requireResidentKey').checked ? '1' : '0');
+
+            url += '&type_usb=' + (document.getElementById('type_usb').checked ? '1' : '0');
+            url += '&type_nfc=' + (document.getElementById('type_nfc').checked ? '1' : '0');
+            url += '&type_ble=' + (document.getElementById('type_ble').checked ? '1' : '0');
+            url += '&type_int=' + (document.getElementById('type_int').checked ? '1' : '0');
+            url += '&type_hybrid=' + (document.getElementById('type_hybrid').checked ? '1' : '0');
+
+            url += '&rpId=' + encodeURIComponent(document.getElementById('rpId').value);
+
+            url += '&userId=' + encodeURIComponent(document.getElementById('userId').value);
+            url += '&userName=' + encodeURIComponent(document.getElementById('userName').value);
+            url += '&userDisplayName=' + encodeURIComponent(document.getElementById('userDisplayName').value);
+
+            if (document.getElementById('userVerification_required').checked) {
+                url += '&userVerification=required';
+
+            } else if (document.getElementById('userVerification_preferred').checked) {
+                url += '&userVerification=preferred';
+
+            } else if (document.getElementById('userVerification_discouraged').checked) {
+                url += '&userVerification=discouraged';
+            }
+
+            return url;
+        }
+
+        function reloadServerPreview() {
+            let iframe = document.getElementById('serverPreview');
+            iframe.src = iframe.src;
+        }
+
+        /**
+         * force https on load
+         * @returns {undefined}
+         */
+        window.onload = function() {
+            if (!window.isSecureContext && location.protocol !== 'https:') {
+                location.href = location.href.replace('http://', 'https://');
+            }
+            if (!document.getElementById('rpId').value) {
+                document.getElementById('rpId').value = location.hostname;
+            }
+        }
+
+        </script>
+        <style>
+            body {
+                font-family:sans-serif;
+                margin: 0 20px;
+                padding: 0;
+            }
+            .splitter {
+                display: flex;
+                flex-direction: row;
+                flex-wrap: wrap;
+                margin: 0;
+                padding: 0;
+            }
+            .splitter > .form {
+                flex: 1;
+                min-width: 600px;
+            }
+            .splitter > .serverPreview {
+                width: 740px;
+                min-height: 700px;
+                margin: 0;
+                padding: 0;
+                border: 1px solid grey;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .splitter > .serverPreview iframe {
+                width: 700px;
+                flex: 1;
+                border: 0;
+            }
+
+        </style>
+    </head>
+    <body>
+        <h1 style="margin: 40px 10px 2px 0;">report-uri/passkeys-php</h1>
+        <div style="font-style: italic;">A security-focused PHP WebAuthn (FIDO2 / Passkeys) server library.</div>
+        <div class="splitter">
+            <div class="form">
+                <div>&nbsp;</div>
+                <div>&nbsp;</div>
+                <div>Simple working demo for the <a href="https://github.com/report-uri/passkeys-php">report-uri/passkeys-php</a> library.</div>
+                <div>
+                    <div>&nbsp;</div>
+                    <table>
+                        <tbody><tr>
+                                <td>
+                                    <button type="button" onclick="createRegistration()">&#10133; new registration</button>
+                                </td>
+                                <td>
+                                    <button type="button" onclick="checkRegistration()">&#10068; check registration</button>
+                                </td>
+                                <td>
+                                    <button type="button" onclick="clearRegistration()">&#9249; clear all registrations</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div>&nbsp;</div>
+
+                    <div>
+                        <input type="checkbox" id="requireResidentKey" name="requireResidentKey">
+                        <label for="requireResidentKey">Use Client-side discoverable Credentials / Passkeys
+                            <i style="font-size: 0.8em;">Warning: most client-side modules and authenticators don't allow to delete single client side credentials.
+                                You have to reset the full device to remove the credentials again.</i>
+                        </label>
+                    </div>
+
+                    <div>&nbsp;</div>
+                    <div style="font-weight: bold">Relying Party</div>
+                    <p style="margin:0 0 5px 0;font-size:0.9em;font-style: italic;">A valid domain string that identifies the
+                        WebAuthn Relying Party<br/>on whose behalf a given registration or authentication ceremony is being performed.</p>
+                    <div>
+                        <label for="rpId">RP ID:</label>
+                        <input type="text" id="rpId" name="rpId" value="">
+                    </div>
+
+                    <div>&nbsp;</div>
+                    <div style="font-weight: bold">User</div>
+                    <div style="margin-bottom:12px">
+                        <label for="userId">User ID (Hex):</label>
+                        <input type="text" id="userId" name="userId" value="64656d6f64656d6f" required pattern="[0-9a-fA-F]{2,}">
+                        <i style="font-size: 0.8em;">You get the user ID back when checking registration (as userHandle), if you're using client-side discoverable credentials.
+                        You can identify with this ID the user who wants to login.
+                        A user handle is an opaque byte sequence with a maximum size of 64 bytes, and is not meant to be displayed to the user.
+                        The user handle MUST NOT contain personally identifying information about the user, such as a username or e-mail address.</i>
+                    </div>
+                    <div style="margin-bottom:12px">
+                        <label for="userName">User Name:</label>
+                        <input type="text" id="userName" name="userName" value="demo" required pattern="[0-9a-zA-Z]{2,}">
+                        <i style="font-size: 0.8em;">only for display, i.e., aiding the user in determining the difference between user accounts with similar display names.</i>
+                    </div>
+                    <div style="margin-bottom:6px">
+                        <label for="userDisplayName">User Display Name:</label>
+                        <input type="text" id="userDisplayName" name="userDisplayName" value="Demo Demolin" required>
+                        <i style="font-size: 0.8em;">A human-palatable name for the user account, intended only for display.</i>
+                    </div>
+
+                    <div>&nbsp;</div>
+                    <div style="font-weight: bold">user verification</div>
+                    <div>
+                        <input type="radio" id="userVerification_required" name="userVerification">
+                        <label for="userVerification_required">required <i style="font-size: 0.8em;">User verification is required (e.g. by pin), the operation will fail if the response does not have the UV flag.</i></label>
+                    </div>
+
+                    <div>
+                        <input type="radio" id="userVerification_preferred" name="userVerification">
+                        <label for="userVerification_preferred">preferred <i style="font-size: 0.8em;">user verification is prefered, the operation will not fail if the response does not have the UV flag.</i></label>
+                    </div>
+
+                    <div>
+                        <input type="radio" id="userVerification_discouraged" name="userVerification" checked>
+                        <label for="userVerification_discouraged">discouraged <i style="font-size: 0.8em;">user verification should not be employed as to minimize the user interaction during the process.</i></label>
+                    </div>
+
+                    <div>&nbsp;</div>
+                    <div style="font-weight: bold">type of authenticator</div>
+                    <div>
+                        <input type="checkbox" id="type_usb" name="type_usb" checked>
+                        <label for="type_usb">USB</label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="type_nfc" name="type_nfc" checked>
+                        <label for="type_nfc">NFC</label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="type_ble" name="type_ble" checked>
+                        <label for="type_ble">BLE</label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="type_hybrid" name="type_hybrid" checked>
+                        <label for="type_hybrid">hybrid <i style="font-size: 0.8em;">Passkeys via mobile device, ...</i></label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="type_int" name="type_int" checked>
+                        <label for="type_int">internal <i style="font-size: 0.8em;">Passkeys on the device, Windows Hello, Android SafetyNet, Apple, ...</i></label>
+                    </div>
+
+                    <div style="margin-top:20px;font-size: 0.7em;font-style: italic">
+                        Copyright &copy; 2023 Lukas Buchs - <a href="https://raw.githubusercontent.com/report-uri/passkeys-php/master/LICENSE">license therms</a>
+                    </div>
+
+                </div>
+            </div>
+            <div class="serverPreview">
+                <p style="margin-left:10px;font-weight: bold;">Here you can see what's saved on the server:</p>
+                <iframe src="server.php?fn=getStoredDataHtml" id="serverPreview"></iframe>
+            </div>
+        <div>
+    </body>
+</html>
