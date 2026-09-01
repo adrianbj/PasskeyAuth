@@ -68,6 +68,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $this->set('appName', '');
         $this->set('rpId', '');
         $this->set('allowedRoles', []);
+        $this->set('enableFrontendEndpoints', 0);
         // userVerification is hardcoded to 'required' in Server.php — see the
         // comment there. It is intentionally not exposed as a config option:
         // this is a passkey module, and the W3C / FIDO Alliance guidance for
@@ -117,6 +118,31 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
     public function ___loginRedirectUrl(\ProcessWire\User $user): string
     {
         return (string) $this->wire('config')->urls->admin;
+    }
+
+    /**
+     * Site-overridable eligibility check for FRONTEND passkey registration.
+     * The admin surface (ProcessPasskeyAuth) is not affected. Rename and
+     * delete are deliberately not gated: a user who loses eligibility must
+     * still be able to revoke stored credentials.
+     */
+    public function ___allowFrontendRegistration(\ProcessWire\User $user): bool
+    {
+        return true;
+    }
+
+    /**
+     * Deny response for frontend registration, or null when allowed. Shape
+     * matches Endpoints::error() so PasskeyAuth.js surfaces it identically.
+     */
+    private function frontendRegisterGate(): ?string
+    {
+        if ($this->allowFrontendRegistration($this->wire('user'))) return null;
+        http_response_code(403);
+        header('Content-Type: application/json');
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: no-store');
+        return '{"error":"Forbidden","code":"forbidden"}';
     }
 
     /**
@@ -208,6 +234,26 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $this->wire()->addHook("{$prefix}/login/finish", function() {
             return $this->buildEndpoints()->loginFinish();
         });
+
+        // Frontend management endpoints: the same Endpoints logic ProcessPasskeyAuth
+        // dispatches, exposed on the neutral login-API path so non-admin pages can
+        // offer passkey management without ever referencing the admin URL. Off by
+        // default; a site enabling this should usually also hook
+        // allowFrontendRegistration() to decide who may enroll from the frontend.
+        if ($this->enableFrontendEndpoints) {
+            $this->wire()->addHook("{$prefix}/manage/register-options", function() {
+                return $this->frontendRegisterGate() ?? $this->buildEndpoints()->registerOptions();
+            });
+            $this->wire()->addHook("{$prefix}/manage/register-finish", function() {
+                return $this->frontendRegisterGate() ?? $this->buildEndpoints()->registerFinish();
+            });
+            $this->wire()->addHook("{$prefix}/manage/rename", function() {
+                return $this->buildEndpoints()->rename();
+            });
+            $this->wire()->addHook("{$prefix}/manage/delete", function() {
+                return $this->buildEndpoints()->delete();
+            });
+        }
 
         $this->addHookAfter('ProcessLogin::buildLoginForm', $this, 'addLoginButton');
         // Banner is injected directly into the rendered page (HTML + JS together)
@@ -707,6 +753,13 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $f->label = 'Show registration banner';
         $f->description = 'Auto-prompt logged-in admins without passkeys to register one.';
         if (!empty($data['bannerEnabled'])) $f->attr('checked', 'checked');
+        $fields->add($f);
+
+        $f = $modules->get('InputfieldCheckbox');
+        $f->name = 'enableFrontendEndpoints';
+        $f->label = 'Enable frontend management endpoints';
+        $f->description = 'Registers /passkey-auth/manage/* URL hooks (register, rename, delete) for logged-in allow-listed users, so non-admin pages can offer passkey management without referencing the admin URL.';
+        if (!empty($data['enableFrontendEndpoints'])) $f->attr('checked', 'checked');
         $fields->add($f);
 
         return $fields;
