@@ -1,29 +1,29 @@
 {
     "packages": [
         {
-            "name": "lbuchs/webauthn",
-            "version": "v2.2.0",
-            "version_normalized": "2.2.0.0",
+            "name": "report-uri/passkeys-php",
+            "version": "v2.0.1",
+            "version_normalized": "2.0.1.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/lbuchs/WebAuthn.git",
-                "reference": "20adb4a240c3997bd8cac7dc4dde38ab0bea0ed1"
+                "url": "https://github.com/report-uri/passkeys-php.git",
+                "reference": "f8cddbfe00f9ecff1eebeb6bcae18b111f6bc468"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/lbuchs/WebAuthn/zipball/20adb4a240c3997bd8cac7dc4dde38ab0bea0ed1",
-                "reference": "20adb4a240c3997bd8cac7dc4dde38ab0bea0ed1",
+                "url": "https://api.github.com/repos/report-uri/passkeys-php/zipball/f8cddbfe00f9ecff1eebeb6bcae18b111f6bc468",
+                "reference": "f8cddbfe00f9ecff1eebeb6bcae18b111f6bc468",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.0.0"
             },
-            "time": "2024-07-04T07:17:40+00:00",
+            "time": "2026-05-20T13:11:09+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
                 "psr-4": {
-                    "lbuchs\\WebAuthn\\": "src"
+                    "ReportUri\\Passkeys\\": "src"
                 }
             },
             "notification-url": "https://packagist.org/downloads/",
@@ -32,21 +32,28 @@
             ],
             "authors": [
                 {
+                    "name": "Report URI",
+                    "homepage": "https://report-uri.com"
+                },
+                {
                     "name": "Lukas Buchs",
-                    "role": "Developer"
+                    "role": "Original author of lbuchs/WebAuthn"
                 }
             ],
-            "description": "A simple PHP WebAuthn (FIDO2) server library",
-            "homepage": "https://github.com/lbuchs/webauthn",
+            "description": "A security-focused PHP WebAuthn (FIDO2 / Passkeys) server library, forked from lbuchs/WebAuthn",
+            "homepage": "https://github.com/report-uri/passkeys-php",
             "keywords": [
                 "Authentication",
+                "FIDO2",
+                "passkey",
+                "passkeys",
                 "webauthn"
             ],
             "support": {
-                "issues": "https://github.com/lbuchs/WebAuthn/issues",
-                "source": "https://github.com/lbuchs/WebAuthn/tree/v2.2.0"
+                "issues": "https://github.com/report-uri/passkeys-php/issues",
+                "source": "https://github.com/report-uri/passkeys-php"
             },
-            "install-path": "../lbuchs/webauthn"
+            "install-path": "../report-uri/passkeys-php"
         }
     ],
     "dev": false,
