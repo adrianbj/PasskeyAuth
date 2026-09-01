@@ -109,6 +109,17 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
     }
 
     /**
+     * Where a successful passkey login sends the user. Hookable so a site can
+     * route non-admin audiences elsewhere; the default preserves the admin
+     * destination this module was built around. Called after forceLogin, so
+     * hooks may inspect the fully logged-in user and session.
+     */
+    public function ___loginRedirectUrl(\ProcessWire\User $user): string
+    {
+        return (string) $this->wire('config')->urls->admin;
+    }
+
+    /**
      * M6: read the configured role allow-list with the guest role stripped.
      * The config UI excludes guest from the option list, but a direct config
      * POST (only superusers can do this) could include it; this filter ensures

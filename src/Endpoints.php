@@ -760,9 +760,16 @@ final class Endpoints
             $this->wire->wire('log')->save('passkey-auth', 'forceLogin did not rotate session id; regenerated explicitly (session-fixation guard)');
         }
 
+        // $this->wire is the PasskeyAuth module instance (buildEndpoints passes
+        // $this), but the constructor type is the wider Wire — keep a typed
+        // fallback so a bare-Wire caller still gets the historical destination.
+        $redirect = $this->wire instanceof \ProcessWire\PasskeyAuth
+            ? $this->wire->loginRedirectUrl($user)
+            : (string) $this->wire->wire('config')->urls->admin;
+
         return $this->respond([
             'ok' => true,
-            'redirect' => $this->wire->wire('config')->urls->admin,
+            'redirect' => $redirect,
         ]);
     }
 
