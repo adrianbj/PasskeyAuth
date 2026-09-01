@@ -220,6 +220,22 @@ final class Endpoints
     }
 
     /**
+     * Site-overridable registration policy, enforced on EVERY registration
+     * surface (the frontend URL hooks and the admin dispatcher both route
+     * through registerOptions/registerFinish). Delegates to the module's
+     * ___allowPasskeyRegistration hookable so a site can veto enrollment for
+     * specific accounts — e.g. deny users whose identity is federated
+     * upstream and can't be backed by a local passkey. A bare-Wire caller
+     * (no module, as in unit tests) defaults to allowed, matching the
+     * hookable's own default.
+     */
+    private function registrationAllowed(User $user): bool
+    {
+        return !($this->wire instanceof \ProcessWire\PasskeyAuth)
+            || $this->wire->allowPasskeyRegistration($user);
+    }
+
+    /**
      * Strict base64url decoder. WebAuthn `cred.toJSON()` produces base64url
      * (uses `-_` instead of `+/`, no padding). Returns null for malformed
      * input or input larger than MAX_B64_INPUT_LEN (L6 hardening).
@@ -293,6 +309,10 @@ final class Endpoints
 
         if (!$this->isAllowedByRole($target)) {
             return $this->error('User not permitted to register passkeys', 'role_denied', 403);
+        }
+
+        if (!$this->registrationAllowed($target)) {
+            return $this->error('User not permitted to register passkeys', 'registration_denied', 403);
         }
 
         // H4: enforce per-user passkey cap. Checked again at finish time
@@ -396,6 +416,13 @@ final class Endpoints
         // H1: re-check role allow-list at finish time. Roles may have changed since options.
         $targetUser = $this->wire->wire('users')->get($userId);
         if (!$targetUser || !$targetUser->id || !$this->isAllowedByRole($targetUser)) {
+            $this->clearRegistrationSession();
+            return $this->error('Forbidden', 'forbidden', 403);
+        }
+
+        // Re-check the site registration policy at finish time too: options and
+        // finish are separate requests, so a client could skip options entirely.
+        if (!$this->registrationAllowed($targetUser)) {
             $this->clearRegistrationSession();
             return $this->error('Forbidden', 'forbidden', 403);
         }
@@ -760,9 +787,16 @@ final class Endpoints
             $this->wire->wire('log')->save('passkey-auth', 'forceLogin did not rotate session id; regenerated explicitly (session-fixation guard)');
         }
 
+        // $this->wire is the PasskeyAuth module instance (buildEndpoints passes
+        // $this), but the constructor type is the wider Wire — keep a typed
+        // fallback so a bare-Wire caller still gets the historical destination.
+        $redirect = $this->wire instanceof \ProcessWire\PasskeyAuth
+            ? $this->wire->loginRedirectUrl($user)
+            : (string) $this->wire->wire('config')->urls->admin;
+
         return $this->respond([
             'ok' => true,
-            'redirect' => $this->wire->wire('config')->urls->admin,
+            'redirect' => $redirect,
         ]);
     }
 

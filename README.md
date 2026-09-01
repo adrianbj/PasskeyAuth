@@ -47,6 +47,24 @@ Username autofill (`autocomplete="username webauthn"`) is also wired up, so brow
 
 The user-edit / profile screen shows a **Passkeys** fieldset listing all registered passkeys for that user, with their label, registration date, and last-used date. Click a name to rename, click **Delete** to remove one. Superusers can manage any user's passkeys; non-superusers can manage only their own.
 
+### Frontend management endpoints
+
+Off by default. Tick **Enable frontend management endpoints** (Modules → Configure → PasskeyAuth) to register these URL hooks on the neutral login-API path, so a non-admin page can offer passkey management without ever referencing the admin URL:
+
+| URL | Purpose |
+|---|---|
+| `/passkey-auth/manage/register-options` | Start registering a new passkey for the logged-in user |
+| `/passkey-auth/manage/register-finish` | Complete registration |
+| `/passkey-auth/manage/rename` | Rename a stored passkey |
+| `/passkey-auth/manage/delete` | Delete a stored passkey |
+
+They run the same `Endpoints` logic as the admin surface (POST + login + CSRF + role allow-list + ownership already enforced there), so enabling the toggle does not by itself change who can act — it only changes where the endpoints are reachable from.
+
+Two hooks let a site customize behavior:
+
+- **`___loginRedirectUrl(User $user): string`** — where a successful passkey login sends the user. Defaults to the admin root; hook it to route non-admin audiences (e.g. subscribers) elsewhere.
+- **`___allowPasskeyRegistration(User $user): bool`** — gates who may enroll a new passkey, default `true`. Enforced inside `Endpoints::registerOptions/registerFinish`, so it applies on **every** registration surface — the frontend URL hooks and the admin dispatcher alike — not just non-admin pages. Hook it to restrict enrollment for specific accounts (e.g. deny users whose identity is federated upstream and can't be backed by a local passkey). Rename and delete are deliberately **not** gated: a user who later loses eligibility must still be able to revoke passkeys they already registered, so credentials never get stranded with no UI to remove them.
+
 ## Security
 
 This module is designed for production deployment of an admin login surface. Code-level hardening is documented inline (search `SEC-D`, `SEC-E`, `SEC-F` markers).
