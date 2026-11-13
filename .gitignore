@@ -8,6 +8,9 @@
 !/vendor/autoload.php
 !/vendor/composer/
 !/vendor/report-uri/
+# The library's demo server/client: unauthenticated endpoints that must not
+# ship inside a web-reachable module directory.
+/vendor/report-uri/passkeys-php/_test/
 
 # Autoload file that only appears with dev deps installed (phpunit has a
 # `files` autoload entry). The tracked vendor/composer/autoload_*.php files
