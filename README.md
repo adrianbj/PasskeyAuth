@@ -121,6 +121,8 @@ Suggested tools:
 
 **Origin allow-list.** Matching the RP ID is not enough on its own: an RP ID of `example.com` is valid for *every* subdomain, including one an attacker might control. The module therefore also requires the ceremony's origin host (and port) to exactly match an entry in `$config->httpHosts`. List every host users reach the site on there (include the port for non-standard ports, e.g. `localhost:8080`). A passkey ceremony from a host that isn't listed fails with `Origin not in allowed hosts` in the `passkey-auth` log. If `$config->httpHosts` is empty the module falls back to the current request host.
 
+**Set the RP ID explicitly in production.** When the field is left blank the module uses `$config->httpHost`, and if `$config->httpHosts` is also empty ProcessWire derives that from the request's `Host` header. A wrong host cannot be used to bypass authentication (the authenticator signs the RP ID it was registered under, so verification simply fails), but it makes passkeys break in confusing ways.
+
 **Do not change the RP ID after passkeys are registered** — the WebAuthn credential is bound to the RP ID, and existing passkeys will stop working.
 
 #### 4. HTTPS in production
@@ -146,15 +148,19 @@ Caveat: the registration banner emits a small inline `<style>` block (critical C
 Schema is created on install. Tables:
 
 - `passkey_auth` — current schema (this module).
-- `loginpasskey` — legacy table from a prior name (dropped on uninstall, ignored otherwise).
+- `loginpasskey` — legacy table from a prior name. Ignored at runtime; dropped on uninstall only if it has this module's columns, so a same-named table belonging to something else is left alone.
 
 Per-user passkey cap: 25 (`Endpoints::MAX_CREDENTIALS_PER_USER`). Enforced atomically inside `Storage::addIfUnderCap` via `SELECT ... FOR UPDATE`.
+
+#### 7. Passkeys outlive password changes
+
+A passkey is an independent credential: changing or resetting a user's password does **not** revoke their passkeys, and adding one needs only a logged-in session (no password re-prompt). When responding to a suspected account compromise, review the user's passkey list — and the registration lines in `passkey-auth.txt` — and delete any you don't recognise, in addition to resetting the password.
 
 ### Logging
 
 Two log channels:
 
-- `passkey-auth.txt` — general module errors (verifyRegistration / verifyLogin throws, encode failures, trash cascade, etc.).
+- `passkey-auth.txt` — general module errors (verifyRegistration / verifyLogin throws, encode failures, trash cascade, etc.) plus an audit line for every passkey registered or deleted: `Passkey id N registered for user U by user A` (A differs from U when a superuser acts on someone else's account).
 - `passkey-auth-login-failures.txt` — every failed login attempt, with `category=<code>` and integer-only context fields. Safe to ship to SOC pipelines (no user-controlled data).
 
 Login failure categories:
@@ -194,7 +200,7 @@ composer install
 ./vendor/bin/phpunit
 ```
 
-74 unit tests cover storage CRUD, rate limiting, name sanitisation, WebAuthn server option generation, and the origin-check gate (33 cases including evil-prefix host, exact-origin allow-list, FQDN trailing dot, scheme allow-list, userinfo / IPv6 / cross-origin rejections).
+77 unit tests cover storage CRUD, text-safe session storage of ceremony state, rate limiting, name sanitisation, WebAuthn server option generation, and the origin-check gate (33 cases including evil-prefix host, exact-origin allow-list, FQDN trailing dot, scheme allow-list, userinfo / IPv6 / cross-origin rejections).
 
 End-to-end browser testing is manual — see [`docs/`](./docs/) for the test pass checklist.
 

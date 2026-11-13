@@ -250,6 +250,30 @@ final class Endpoints
         return $decoded === false ? null : $decoded;
     }
 
+    /**
+     * Store raw bytes (challenge, user handle) in the session base64-encoded.
+     * Session backends that persist to a text column in the DB charset
+     * (ProcessWire's SessionHandlerDB uses MEDIUMTEXT) can reject or truncate
+     * invalid UTF-8, which would corrupt the whole session record.
+     */
+    private function setSessionBytes(string $key, string $bytes): void
+    {
+        $this->session()->setFor(self::SESSION_NAMESPACE, $key, base64_encode($bytes));
+    }
+
+    /**
+     * Counterpart to setSessionBytes. Returns '' when the key is absent or
+     * the stored value isn't valid base64 (e.g. a raw value written by a
+     * pre-upgrade request mid-ceremony) so callers fail closed.
+     */
+    private function getSessionBytes(string $key): string
+    {
+        $stored = $this->session()->getFor(self::SESSION_NAMESPACE, $key);
+        if (!is_string($stored) || $stored === '') return '';
+        $bytes = base64_decode($stored, true);
+        return $bytes === false ? '' : $bytes;
+    }
+
     private function clearRegistrationSession(): void
     {
         $this->session()->removeFor(self::SESSION_NAMESPACE, self::REGISTER_CHALLENGE_KEY);
@@ -358,7 +382,7 @@ final class Endpoints
             $this->requireResidentKey,
         );
 
-        $this->session()->setFor(self::SESSION_NAMESPACE, self::REGISTER_CHALLENGE_KEY, $result['challenge']);
+        $this->setSessionBytes(self::REGISTER_CHALLENGE_KEY, $result['challenge']);
         $this->session()->setFor(self::SESSION_NAMESPACE, 'register_user_id', $target->id);
         // M3: also bind to the *session* user id at options time so finish can
         // confirm the same browser session is completing the ceremony, even
@@ -370,7 +394,7 @@ final class Endpoints
         // also defends against a concurrent same-user registration on another
         // session that lands a different random handle in storage between
         // options and finish.
-        $this->session()->setFor(self::SESSION_NAMESPACE, 'register_user_handle', $userHandle);
+        $this->setSessionBytes('register_user_handle', $userHandle);
         $this->session()->setFor(self::SESSION_NAMESPACE, 'register_name', $name);
 
         return $this->respond(['options' => $result['options']]);
@@ -383,10 +407,10 @@ final class Endpoints
         $body = $this->readJsonBody();
         if ($err = $this->requireCsrf($body)) return $err;
 
-        $challenge       = $this->session()->getFor(self::SESSION_NAMESPACE, self::REGISTER_CHALLENGE_KEY);
+        $challenge       = $this->getSessionBytes(self::REGISTER_CHALLENGE_KEY);
         $userId          = (int) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_user_id');
         $sessionUserId   = (int) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_session_user_id');
-        $userHandle      = (string) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_user_handle');
+        $userHandle      = $this->getSessionBytes('register_user_handle');
         $name            = (string) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_name');
 
         // JS may override the auto-generated name after navigator.credentials.create()
@@ -398,7 +422,7 @@ final class Endpoints
             $name = $bodyName;
         }
 
-        if (!$challenge || !$userId || $userHandle === '') {
+        if ($challenge === '' || !$userId || $userHandle === '') {
             $this->clearRegistrationSession();
             return $this->error('No registration in progress', 'no_session', 400);
         }
@@ -506,6 +530,16 @@ final class Endpoints
 
         $this->clearRegistrationSession();
 
+        // Audit trail: a passkey is a durable credential that survives a
+        // password change, so every enrolment is recorded (ints only) for
+        // incident response — "who added which passkey to which account".
+        $this->wire->wire('log')->save('passkey-auth', sprintf(
+            'Passkey id %d registered for user %d by user %d',
+            $id,
+            $userId,
+            (int) $this->user()->id
+        ));
+
         // Return the freshly-stored row so JS can render it identically to the
         // server-rendered initial rows (same date formatting, etc.) without
         // needing a follow-up fetch.
@@ -544,7 +578,7 @@ final class Endpoints
 
         $result = $this->server->loginOptions([]);
 
-        $this->session()->setFor(self::SESSION_NAMESPACE, self::LOGIN_CHALLENGE_KEY, $result['challenge']);
+        $this->setSessionBytes(self::LOGIN_CHALLENGE_KEY, $result['challenge']);
 
         return $this->respond(['options' => $result['options']]);
     }
@@ -597,8 +631,8 @@ final class Endpoints
             return $this->error('Authentication failed', 'auth_failed', 400);
         }
 
-        $challenge = $this->session()->getFor(self::SESSION_NAMESPACE, self::LOGIN_CHALLENGE_KEY);
-        if (!$challenge) {
+        $challenge = $this->getSessionBytes(self::LOGIN_CHALLENGE_KEY);
+        if ($challenge === '') {
             $this->clearLoginSession();
             $this->logLoginFailure('no_challenge');
             return $this->error('Authentication failed', 'auth_failed', 400);
@@ -869,6 +903,12 @@ final class Endpoints
         }
 
         $this->storage->delete($id);
+        $this->wire->wire('log')->save('passkey-auth', sprintf(
+            'Passkey id %d deleted for user %d by user %d',
+            $id,
+            (int) $row['user_id'],
+            (int) $this->user()->id
+        ));
         return $this->respond(['ok' => true]);
     }
 

@@ -31,6 +31,7 @@ if (!class_exists(Wire::class)) {
             private bool $superuser = false,
             public array $roles = [],
             private bool $loggedin = true,
+            public string $name = 'test-user',
         ) {}
 
         public function isLoggedin(): bool { return $this->loggedin; }

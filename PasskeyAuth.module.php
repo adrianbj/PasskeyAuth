@@ -709,11 +709,32 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $this->message(sprintf('PasskeyAuth upgraded: backfilled %d existing passkey row(s) with legacy user handles.', count($rows)));
     }
 
+    /**
+     * True only if the legacy table exists AND has the columns this module's
+     * predecessor created. Any error (missing table, no privileges) is
+     * treated as "not ours" so uninstall never drops a foreign table.
+     */
+    private function isLegacyPasskeyTable(): bool
+    {
+        try {
+            $stmt = $this->wire('database')->query('SHOW COLUMNS FROM `' . self::LEGACY_TABLE_NAME . '`');
+            $columns = array_map('strtolower', $stmt->fetchAll(\PDO::FETCH_COLUMN, 0));
+        } catch (\Throwable) {
+            return false;
+        }
+        $required = ['user_id', 'credential_id', 'public_key', 'sign_count'];
+        return array_diff($required, $columns) === [];
+    }
+
     public function ___uninstall(): void
     {
         $db = $this->wire('database');
         $db->exec("DROP TABLE IF EXISTS " . self::TABLE_NAME);
-        $db->exec("DROP TABLE IF EXISTS " . self::LEGACY_TABLE_NAME);
+        // `loginpasskey` is a generic name another module could own. Only
+        // drop it when it carries this module's schema.
+        if ($this->isLegacyPasskeyTable()) {
+            $db->exec("DROP TABLE IF EXISTS " . self::LEGACY_TABLE_NAME);
+        }
         $this->message('PasskeyAuth uninstalled.');
     }
 
