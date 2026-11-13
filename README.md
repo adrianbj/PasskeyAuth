@@ -81,7 +81,7 @@ The login endpoints are guest-reachable; the management endpoints are admin-gate
 
 ### Defenses
 
-- **Anchored origin validation** — works around the unanchored regex in `lbuchs/webauthn` so `evilexample.com` cannot match an RP ID of `example.com`. 33 unit tests cover the gate.
+- **Anchored origin validation** — the module's own origin gate runs before the WebAuthn library's, so `evilexample.com` cannot match an RP ID of `example.com`, and the origin must also be one of the site's configured hosts. 33 unit tests cover the gate.
 - **CSRF on every mutation** — register, rename, delete, banner-dismiss
 - **Per-session rate limit** — 20 login attempts / 60s, applied to both `login/options` and `login/finish`
 - **Per-user passkey cap** — 25, enforced atomically via `SELECT ... FOR UPDATE`
@@ -178,7 +178,7 @@ Login failure categories:
 | `user_trashed` | User is in trash |
 | `user_unpublished` | User is unpublished (disabled); login refused until re-published |
 | `role_denied` | User's role is no longer in the allow-list |
-| `signature_verification_failed` | lbuchs library threw during processGet |
+| `signature_verification_failed` | WebAuthn library threw during processGet |
 | `counter_rollback` | Authenticator's signCount went backwards (clone indicator) |
 | `force_login_refused` | PW core declined the forced login (e.g. an eligibility gate not mirrored here); fails closed |
 | `already_logged_in` | Session is already authenticated |
@@ -189,7 +189,7 @@ Login failure categories:
 - **Login endpoints** — registered as URL hooks at `/passkey-auth/login/options` and `/passkey-auth/login/finish` so they're reachable by guests before page resolution.
 - **Protected endpoints** — live under `/admin/passkey-auth/` as a hidden Process module page (`ProcessPasskeyAuth`). The admin URL gate keeps guests out; finer authorization (role allow-list, ownership, CSRF) is enforced inside `Endpoints`.
 - **Banner injection** — the registration prompt is injected directly into the rendered HTML by a `Page::render` hook (not via `$this->warning(...)`, which would persist undisplayed across redirects).
-- **Server-side WebAuthn** — wraps `lbuchs/webauthn` for attestation/assertion verification. Origin and crossOrigin checks run *before* delegating to the library.
+- **Server-side WebAuthn** — wraps `report-uri/passkeys-php` (a maintained fork of `lbuchs/webauthn`) for attestation/assertion verification. Origin and crossOrigin checks run *before* delegating to the library.
 
 ## Development
 

@@ -50,6 +50,9 @@ final class Endpoints
     // keeping a single bad request from chewing memory.
     private const MAX_B64_INPUT_LEN = 8192;
 
+    // Must match the credential_id column width (VARBINARY(255)).
+    private const MAX_CREDENTIAL_ID_LEN = 255;
+
     // SEC-E M-A1: cap the entire request body. The largest legitimate WebAuthn
     // payload (a register-finish containing attestationObject + clientDataJSON
     // base64-encoded) is well under 16 KB. 64 KB is a safety margin that still
@@ -484,6 +487,17 @@ final class Endpoints
             $verified = $this->server->verifyRegistration($clientDataJson, $attestationObject, $challenge);
         } catch (\Throwable $e) {
             $this->wire->wire('log')->save('passkey-auth', 'verifyRegistration failed: ' . self::sanitizeForLog($e->getMessage()));
+            $this->clearRegistrationSession();
+            return $this->error('Verification failed', 'verify_failed', 400);
+        }
+
+        // The WebAuthn library accepts credential IDs up to 1023 bytes (the
+        // spec maximum) but the credential_id column is VARBINARY(255). Under
+        // non-strict SQL modes MySQL would silently truncate a longer ID,
+        // storing a credential that can never match at login. Reject cleanly
+        // instead. Real authenticators use 16-128 bytes.
+        if (strlen((string) $verified['credentialId']) > self::MAX_CREDENTIAL_ID_LEN) {
+            $this->wire->wire('log')->save('passkey-auth', 'verifyRegistration failed: credential id too long');
             $this->clearRegistrationSession();
             return $this->error('Verification failed', 'verify_failed', 400);
         }

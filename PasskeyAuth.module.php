@@ -216,7 +216,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         // SEC-D I6: refuse to construct with an obviously bad rpId. WebAuthn
         // requires the RP ID to be a registrable-suffix of the origin host;
         // a misconfigured rpId either silently breaks login or, when paired
-        // with the lbuchs origin-regex bug (mitigated by Server::assertOrigin),
+        // with a loose origin check (guarded against by Server::assertOrigin),
         // could weaken origin checks further. Allow only hostname characters.
         if (!preg_match('/^[a-z0-9.-]+$/i', $rpId) || str_starts_with($rpId, '.') || str_ends_with($rpId, '.')) {
             throw new \RuntimeException('Invalid rpId configuration');
