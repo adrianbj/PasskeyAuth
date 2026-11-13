@@ -81,7 +81,7 @@ The login endpoints are guest-reachable; the management endpoints are admin-gate
 
 ### Defenses
 
-- **Anchored origin validation** — works around the unanchored regex in `lbuchs/webauthn` so `evilexample.com` cannot match an RP ID of `example.com`. 29 unit tests cover the gate.
+- **Anchored origin validation** — works around the unanchored regex in `lbuchs/webauthn` so `evilexample.com` cannot match an RP ID of `example.com`. 33 unit tests cover the gate.
 - **CSRF on every mutation** — register, rename, delete, banner-dismiss
 - **Per-session rate limit** — 20 login attempts / 60s, applied to both `login/options` and `login/finish`
 - **Per-user passkey cap** — 25, enforced atomically via `SELECT ... FOR UPDATE`
@@ -118,6 +118,8 @@ Suggested tools:
 #### 3. RP ID configuration
 
 `Relying Party ID` MUST equal the host the admin is served from (or a registrable suffix). If you serve admin at `admin.example.com`, an RP ID of `example.com` works (subdomain match); `evilexample.com` does NOT (anchored origin check rejects it).
+
+**Origin allow-list.** Matching the RP ID is not enough on its own: an RP ID of `example.com` is valid for *every* subdomain, including one an attacker might control. The module therefore also requires the ceremony's origin host (and port) to exactly match an entry in `$config->httpHosts`. List every host users reach the site on there (include the port for non-standard ports, e.g. `localhost:8080`). A passkey ceremony from a host that isn't listed fails with `Origin not in allowed hosts` in the `passkey-auth` log. If `$config->httpHosts` is empty the module falls back to the current request host.
 
 **Do not change the RP ID after passkeys are registered** — the WebAuthn credential is bound to the RP ID, and existing passkeys will stop working.
 
@@ -192,7 +194,7 @@ composer install
 ./vendor/bin/phpunit
 ```
 
-65 unit tests cover storage CRUD, rate limiting, name sanitisation, WebAuthn server option generation, and the origin-check gate (29 cases including evil-prefix host, FQDN trailing dot, scheme allow-list, userinfo / IPv6 / cross-origin rejections).
+74 unit tests cover storage CRUD, rate limiting, name sanitisation, WebAuthn server option generation, and the origin-check gate (33 cases including evil-prefix host, exact-origin allow-list, FQDN trailing dot, scheme allow-list, userinfo / IPv6 / cross-origin rejections).
 
 End-to-end browser testing is manual — see [`docs/`](./docs/) for the test pass checklist.
 

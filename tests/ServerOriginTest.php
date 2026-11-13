@@ -59,6 +59,39 @@ final class ServerOriginTest extends TestCase
         $this->assertTrue(true);
     }
 
+    public function testAllowListRejectsUnlistedSubdomainOfRpId(): void
+    {
+        // rpId-suffix matching alone would accept this; with an allow-list an
+        // attacker-controlled sibling subdomain must be refused.
+        $server = new Server('Test', 'example.com', ['www.example.com']);
+        $this->expectOriginFailure($server, ['origin' => 'https://evil.example.com'], 'Origin not in allowed hosts');
+        $this->expectOriginFailure($server, ['origin' => 'https://example.com'], 'Origin not in allowed hosts');
+    }
+
+    public function testAllowListAcceptsListedHost(): void
+    {
+        $server = new Server('Test', 'example.com', ['WWW.Example.com.', 'example.com:443']);
+        $this->invokeAssertOrigin($server, ['origin' => 'https://www.example.com']);
+        $this->invokeAssertOrigin($server, ['origin' => 'https://example.com']);
+        $this->assertTrue(true);
+    }
+
+    public function testAllowListIsPortExact(): void
+    {
+        $server = new Server('Test', 'example.com', ['example.com']);
+        $this->expectOriginFailure($server, ['origin' => 'https://example.com:8443'], 'Origin not in allowed hosts');
+
+        $dev = new Server('Test', 'localhost', ['localhost:8080']);
+        $this->invokeAssertOrigin($dev, ['origin' => 'http://localhost:8080']);
+        $this->expectOriginFailure($dev, ['origin' => 'http://localhost:9000'], 'Origin not in allowed hosts');
+    }
+
+    public function testAllowListDoesNotBypassRpIdCheck(): void
+    {
+        $server = new Server('Test', 'example.com', ['evil.test']);
+        $this->expectOriginFailure($server, ['origin' => 'https://evil.test'], 'Origin does not match');
+    }
+
     public function testRejectsEvilPrefixHost(): void
     {
         // The lbuchs library's unanchored regex would accept this; our gate

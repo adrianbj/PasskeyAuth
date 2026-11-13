@@ -223,7 +223,13 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         }
 
         $storage  = new \PasskeyAuth\Storage($this->wire('database')->pdo(), self::TABLE_NAME);
-        $server   = new \PasskeyAuth\Server($rpName, $rpId);
+        // Exact-origin allow-list: the hosts this site is configured to serve
+        // from. Without it the origin check accepts any subdomain of the rpId
+        // (see Server::__construct). Falls back to the resolved request host
+        // when $config->httpHosts is empty.
+        $originHosts = array_values(array_filter((array) $config->httpHosts, 'is_string'));
+        if ($originHosts === []) $originHosts = [(string) $config->httpHost];
+        $server   = new \PasskeyAuth\Server($rpName, $rpId, $originHosts);
         $allowedRoleIds = $this->getAllowedRoleIds();
 
         $this->endpoints = new \PasskeyAuth\Endpoints(

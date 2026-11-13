@@ -16,10 +16,29 @@ final class Server
     private WebAuthn $webauthn;
     private string $rpId;
 
+    /** @var string[] Normalised `host[:port]` allow-list; empty = rpId-suffix check only. */
+    private array $allowedOriginHosts = [];
+
+    /**
+     * @param string[] $allowedOriginHosts Exact `host[:port]` values (as in
+     *        ProcessWire's $config->httpHosts) a ceremony's origin must match.
+     *        The rpId check alone accepts ANY subdomain of the rpId on any
+     *        port, so an attacker controlling a sibling/sub-domain could
+     *        relay an assertion obtained on their page. When this list is
+     *        non-empty the origin must ALSO match one entry exactly. Empty
+     *        keeps the rpId-suffix-only behaviour (bare-library callers,
+     *        unit tests); the module always passes a list.
+     */
     public function __construct(
         string $rpName,
         string $rpId,
+        array $allowedOriginHosts = [],
     ) {
+        foreach ($allowedOriginHosts as $entry) {
+            if (!is_string($entry)) continue;
+            $entry = self::normaliseHostPort($entry);
+            if ($entry !== '') $this->allowedOriginHosts[] = $entry;
+        }
         // 3rd arg = $useBase64UrlEncoding. The WebAuthn constructor sets
         // ByteBuffer::$useBase64UrlEncoding from this; without it the lib defaults
         // to false and serializes binary fields as =?BINARY?B?...?= which atob() rejects.
@@ -114,11 +133,39 @@ final class Server
         if ($scheme !== 'https' && !($scheme === 'http' && ($host === 'localhost' || $host === '127.0.0.1'))) {
             throw new \RuntimeException('Origin scheme not permitted');
         }
-        if ($host === $this->rpId) return;
         $suffix = '.' . $this->rpId;
         $sl = strlen($suffix);
-        if (strlen($host) > $sl && substr($host, -$sl) === $suffix) return;
-        throw new \RuntimeException('Origin does not match rpId');
+        $matchesRpId = $host === $this->rpId
+            || (strlen($host) > $sl && substr($host, -$sl) === $suffix);
+        if (!$matchesRpId) {
+            throw new \RuntimeException('Origin does not match rpId');
+        }
+
+        // Exact-origin allow-list. The rpId check above is necessary but not
+        // sufficient: it accepts every subdomain of the rpId and ignores the
+        // port. Require the origin's host[:port] to be one the site actually
+        // serves from.
+        if ($this->allowedOriginHosts !== []) {
+            $hostPort = isset($parts['port']) ? $host . ':' . (int) $parts['port'] : $host;
+            if (!in_array(self::normaliseHostPort($hostPort), $this->allowedOriginHosts, true)) {
+                throw new \RuntimeException('Origin not in allowed hosts');
+            }
+        }
+    }
+
+    /**
+     * Lowercase, strip a trailing FQDN dot, and drop the default HTTPS port
+     * so `Example.com.`, `example.com:443` and `example.com` compare equal.
+     */
+    private static function normaliseHostPort(string $hostPort): string
+    {
+        $hostPort = strtolower(trim($hostPort));
+        $port = '';
+        if (preg_match('/^(.*):(\d+)$/', $hostPort, $m)) {
+            $hostPort = $m[1];
+            if ($m[2] !== '443') $port = ':' . $m[2];
+        }
+        return rtrim($hostPort, '.') . $port;
     }
 
     /**
