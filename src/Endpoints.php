@@ -23,6 +23,11 @@ final class Endpoints
     private const REGISTER_CHALLENGE_KEY = 'register_challenge';
     private const LOGIN_CHALLENGE_KEY    = 'login_challenge';
     private const BANNER_DISMISSED_KEY = 'banner_dismissed';
+    /** When this session last proved who it is (a sign-in, or the reauth endpoint). */
+    public const SIGNED_IN_AT_KEY = 'signed_in_at';
+    /** Wrong passwords at the reauth endpoint before the account has to wait. */
+    private const REAUTH_MAX_ATTEMPTS = 5;
+    private const REAUTH_WINDOW = 900;
     private const CSRF_ID = 'passkey-auth';
     private const LOGIN_RATE_KEY = 'login_rate';
     // H2: per-session rate limit. Per-session is enough to defeat naive browser-tab
@@ -239,6 +244,60 @@ final class Endpoints
     }
 
     /**
+     * Adding a passkey needs a session that proved who it is recently (the module's
+     * reauthMinutes setting; 0 = off). A signed-in session alone is not that: someone at
+     * an unlocked computer, or holding a stolen session cookie, could otherwise add a
+     * passkey of their own and keep access after the owner changes the password. The
+     * client answers reauth_required by asking for the password ({@see reauth()}), or the
+     * person can sign out and in again. A bare-Wire caller (unit tests) is never asked.
+     */
+    private function requireRecentSignIn(): ?string
+    {
+        if (!($this->wire instanceof \ProcessWire\PasskeyAuth) || $this->wire->recentlySignedIn()) return null;
+        return $this->error('Please confirm your password to add a passkey.', 'reauth_required', 403);
+    }
+
+    /**
+     * Confirm the signed-in user's password, which makes the session count as recently
+     * signed in. Wrong passwords are counted per account, on the server (not in the
+     * session, which the same visitor could start over): REAUTH_MAX_ATTEMPTS within
+     * REAUTH_WINDOW seconds, then the account waits out the window, right password or not.
+     */
+    public function reauth(): string
+    {
+        if ($err = $this->requirePost()) return $err;
+        if ($err = $this->requireLoggedIn()) return $err;
+        $body = $this->readJsonBody();
+        if ($err = $this->requireCsrf($body)) return $err;
+        if (!($this->wire instanceof \ProcessWire\PasskeyAuth)) return $this->error('Forbidden', 'forbidden', 403);
+
+        $user = $this->user();
+        $cache = $this->wire->wire('cache');
+        $key = 'reauth_' . (int) $user->id;
+        $attempts = $cache->getFor($this->wire, $key);
+        $attempts = is_array($attempts) ? $attempts : [];
+        $rate = RateLimit::check($attempts, time(), self::REAUTH_WINDOW, self::REAUTH_MAX_ATTEMPTS);
+        if (!$rate['allowed']) {
+            return $this->error('Too many attempts. Please try again in 15 minutes.', 'rate_limited', 429);
+        }
+
+        $password = $body['password'] ?? '';
+        $stored = $user->getUnformatted('pass');
+        if (!is_string($password) || $password === '' || !is_object($stored) || !strlen((string) $stored->hash)) {
+            return $this->error('This account has no password to confirm. Sign out and sign in again, then add the passkey.', 'no_password', 400);
+        }
+        if (!$stored->matches($password)) {
+            $cache->saveFor($this->wire, $key, $rate['next'], self::REAUTH_WINDOW);
+            $this->wire->wire('log')->save('passkey-auth', sprintf('Wrong password at reauth for user %d', (int) $user->id));
+            return $this->error('That password is not correct.', 'wrong_password', 403);
+        }
+
+        $cache->deleteFor($this->wire, $key);
+        $this->wire->markSignedIn();
+        return $this->respond(['ok' => true]);
+    }
+
+    /**
      * Strict base64url decoder. WebAuthn `cred.toJSON()` produces base64url
      * (uses `-_` instead of `+/`, no padding). Returns null for malformed
      * input or input larger than MAX_B64_INPUT_LEN (L6 hardening).
@@ -303,6 +362,7 @@ final class Endpoints
         $this->clearLoginSession();
         $this->session()->removeFor(self::SESSION_NAMESPACE, self::BANNER_DISMISSED_KEY);
         $this->session()->removeFor(self::SESSION_NAMESPACE, self::LOGIN_RATE_KEY);
+        $this->session()->removeFor(self::SESSION_NAMESPACE, self::SIGNED_IN_AT_KEY);
     }
 
     /**
@@ -328,6 +388,8 @@ final class Endpoints
         if ($err = $this->requireLoggedIn()) return $err;
         $body = $this->readJsonBody();
         if ($err = $this->requireCsrf($body)) return $err;
+
+        if ($err = $this->requireRecentSignIn()) return $err;
 
         $current = $this->user();
         $userId = isset($body['userId']) ? (int) $body['userId'] : $current->id;
@@ -409,6 +471,7 @@ final class Endpoints
         if ($err = $this->requireLoggedIn()) return $err;
         $body = $this->readJsonBody();
         if ($err = $this->requireCsrf($body)) return $err;
+        if ($err = $this->requireRecentSignIn()) return $err;
 
         $challenge       = $this->getSessionBytes(self::REGISTER_CHALLENGE_KEY);
         $userId          = (int) $this->session()->getFor(self::SESSION_NAMESPACE, 'register_user_id');
@@ -553,6 +616,12 @@ final class Endpoints
             $userId,
             (int) $this->user()->id
         ));
+
+        // Tell the site, so it can let the account's owner know: nothing else does,
+        // and a passkey someone else added is access that outlasts a password change.
+        if ($this->wire instanceof \ProcessWire\PasskeyAuth) {
+            $this->wire->passkeyRegistered($targetUser, $id, $this->user(), (string) $sanitizedName);
+        }
 
         // Return the freshly-stored row so JS can render it identically to the
         // server-rendered initial rows (same date formatting, etc.) without

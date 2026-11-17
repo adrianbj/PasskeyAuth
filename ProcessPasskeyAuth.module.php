@@ -100,6 +100,13 @@ class ProcessPasskeyAuth extends Process implements Module
         exit;
     }
 
+    public function ___executeReauth(): void
+    {
+        $this->rejectNonPost();
+        echo $this->endpoints()->reauth();
+        exit;
+    }
+
     public function ___executeRename(): void
     {
         $this->rejectNonPost();

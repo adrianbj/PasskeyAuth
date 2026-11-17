@@ -26,6 +26,7 @@ Sign in to ProcessWire with a passkey — Touch ID, Face ID, Windows Hello, an i
 | **Relying Party ID** | Hostname WebAuthn binds credentials to. Must equal the admin host or a registrable suffix (e.g. RP ID `example.com` works for `admin.example.com`). **Do not change after passkeys are registered** — existing keys will stop working. |
 | **Allowed roles** | Only users with at least one of these roles can register or use passkeys. Fail-closed: with no roles selected, no one can use passkeys. |
 | **Show registration banner** | Auto-prompt logged-in admins (in allowed roles) without a passkey to register one. |
+| **Ask for the password before adding a passkey** | Minutes since the last sign-in within which a passkey can be added straight away. After that the person is asked for their password first (or can sign out and in again). `0` (default) never asks. A signed-in session is not proof of who is at the keyboard: without this, someone at an unlocked computer or with a stolen session cookie can add a passkey of their own and keep access after the password changes. Wrong passwords are counted per account (5 in 15 minutes). Removing and renaming passkeys are never held up. |
 
 ## Use
 
@@ -60,7 +61,11 @@ Off by default. Tick **Enable frontend management endpoints** (Modules → Confi
 
 They run the same `Endpoints` logic as the admin surface (POST + login + CSRF + role allow-list + ownership already enforced there), so enabling the toggle does not by itself change who can act — it only changes where the endpoints are reachable from.
 
-Two hooks let a site customize behavior:
+Three hooks let a site customize behavior, and two methods are there for it to call:
+
+- **`___passkeyRegistered(User $user, int $passkeyId, User $by, string $name): void`** — called after a passkey is stored; does nothing by default. Hook it to tell the account's owner (an email, say): nothing else does, and a passkey somebody else added is access that outlasts a password change. `$by` is the signed-in user who added it.
+- **`countForUser(User $user): int`** — how many passkeys an account has, for example to remind the owner to review them after a password reset.
+- **`removeAllForUser(User $user, string $reason = ''): int`** — removes every passkey an account has and logs it. For deliberate use when an account is known to be in someone else's hands. It is not meant for every password reset: a reset is only as strong as the person's email, and this would let it destroy their stronger credentials.
 
 - **`___loginRedirectUrl(User $user): string`** — where a successful passkey login sends the user. Defaults to the admin root; hook it to route non-admin audiences (e.g. subscribers) elsewhere.
 - **`___allowPasskeyRegistration(User $user): bool`** — gates who may enroll a new passkey, default `true`. Enforced inside `Endpoints::registerOptions/registerFinish`, so it applies on **every** registration surface — the frontend URL hooks and the admin dispatcher alike — not just non-admin pages. Hook it to restrict enrollment for specific accounts (e.g. deny users whose identity is federated upstream and can't be backed by a local passkey). Rename and delete are deliberately **not** gated: a user who later loses eligibility must still be able to revoke passkeys they already registered, so credentials never get stranded with no UI to remove them.

@@ -38,7 +38,11 @@
             body: JSON.stringify(body),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok || !data) throw new Error((data && data.error) || 'Request failed');
+        if (!res.ok || !data) {
+            const err = new Error((data && data.error) || 'Request failed');
+            err.code = (data && data.code) || '';
+            throw err;
+        }
         return data;
     }
 
@@ -399,6 +403,60 @@
             setStatus('Passkeys need a secure (https) connection in a supported browser.');
         }
 
+        // The server answers reauth_required when this session hasn't proved who it is
+        // recently (the module's reauthMinutes setting). Ask for the password here, then
+        // carry on with the add. Built with DOM calls, no markup strings (Trusted Types),
+        // and as a div, not a form: in the admin this sits inside the profile form.
+        function askPassword() {
+            return new Promise((resolve) => {
+                const old = root.querySelector('.passkey-auth-reauth');
+                if (old) old.remove();
+                const form = document.createElement('div');
+                form.className = 'passkey-auth-reauth';
+                const label = document.createElement('label');
+                label.textContent = 'To add a passkey, confirm your password: ';
+                const input = document.createElement('input');
+                input.type = 'password';
+                input.autocomplete = 'current-password';
+                input.className = 'passkey-auth-reauth__input';
+                label.appendChild(input);
+                const ok = document.createElement('button');
+                ok.type = 'button';
+                ok.className = 'passkey-auth-reauth__confirm';
+                ok.textContent = 'Confirm';
+                const cancel = document.createElement('button');
+                cancel.type = 'button';
+                cancel.className = 'passkey-auth-reauth__cancel';
+                cancel.textContent = 'Cancel';
+                form.append(label, ' ', ok, ' ', cancel);
+                status.before(form);
+                input.focus();
+                const done = (value) => { form.remove(); resolve(value); };
+                cancel.addEventListener('click', () => done(false));
+                const submit = async () => {
+                    if (ok.disabled || !input.value) return;
+                    ok.disabled = true;
+                    try {
+                        await postJSON('reauth', { password: input.value });
+                        setStatus('');
+                        done(true);
+                    } catch (e) {
+                        setStatus((e && e.message) || 'Could not confirm your password', true);
+                        if (e && (e.code === 'rate_limited' || e.code === 'no_password')) return done(false);
+                        ok.disabled = false;
+                        input.value = '';
+                        input.focus();
+                    }
+                };
+                ok.addEventListener('click', submit);
+                input.addEventListener('keydown', (ev) => {
+                    if (ev.key !== 'Enter') return;
+                    ev.preventDefault();
+                    submit();
+                });
+            });
+        }
+
         if (addBtn) {
             addBtn.addEventListener('click', async () => {
                 if (addBtn.disabled) return;
@@ -406,7 +464,14 @@
                 setStatus('');
                 addBtn.disabled = true;
                 try {
-                    const result = await registrationFlow(name, userId);
+                    let result;
+                    try {
+                        result = await registrationFlow(name, userId);
+                    } catch (e) {
+                        if (!e || e.code !== 'reauth_required') throw e;
+                        if (!(await askPassword())) return;
+                        result = await registrationFlow(name, userId);
+                    }
                     const p = result && result.passkey;
                     if (p && p.id) {
                         const newRow = renderRow(p);

@@ -38,7 +38,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             'title'    => 'Passkey Auth',
             'summary'  => 'WebAuthn passkey login for ProcessWire admin',
             'author'   => 'Adrian Jones',
-            'version'  => '0.3.0',
+            'version'  => '0.4.0',
             'icon'     => 'key',
             // autoload=true is required: the login URL hooks must be registered
             // before page resolution so guest POSTs to /passkey-auth/login/*
@@ -69,6 +69,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $this->set('rpId', '');
         $this->set('allowedRoles', []);
         $this->set('enableFrontendEndpoints', 0);
+        $this->set('reauthMinutes', 0);
         // userVerification is hardcoded to 'required' in Server.php — see the
         // comment there. It is intentionally not exposed as a config option:
         // this is a passkey module, and the W3C / FIDO Alliance guidance for
@@ -158,6 +159,58 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
     public function ___allowPasskeyRegistration(\ProcessWire\User $user): bool
     {
         return true;
+    }
+
+    /**
+     * Called after a passkey has been stored. Does nothing by default: hook it to tell
+     * the account's owner (an email, say). $by is the signed-in user who added it, which
+     * is the owner unless a superuser added it for them; $name is the passkey's name.
+     */
+    public function ___passkeyRegistered(\ProcessWire\User $user, int $passkeyId, \ProcessWire\User $by, string $name = ''): void
+    {
+    }
+
+    /**
+     * Has this session proved who it is within the last reauthMinutes? Always true when
+     * the setting is 0 (off).
+     */
+    public function recentlySignedIn(): bool
+    {
+        $minutes = (int) $this->reauthMinutes;
+        if ($minutes <= 0) return true;
+        $at = (int) $this->wire('session')->getFor(\PasskeyAuth\Endpoints::SESSION_NAMESPACE, \PasskeyAuth\Endpoints::SIGNED_IN_AT_KEY);
+        return $at > 0 && time() - $at <= $minutes * 60;
+    }
+
+    /** Record that this session has just proved who it is. */
+    public function markSignedIn(): void
+    {
+        $this->wire('session')->setFor(\PasskeyAuth\Endpoints::SESSION_NAMESPACE, \PasskeyAuth\Endpoints::SIGNED_IN_AT_KEY, time());
+    }
+
+    /** How many passkeys an account has. */
+    public function countForUser(\ProcessWire\User $user): int
+    {
+        if (!$user->id) return 0;
+        $storage = new \PasskeyAuth\Storage($this->wire('database')->pdo(), self::TABLE_NAME);
+        return $storage->countForUser((int) $user->id);
+    }
+
+    /**
+     * Remove every passkey an account has, for a site to call deliberately when the account
+     * is known to be in someone else's hands. Returns how many were removed. Not something
+     * to do on every password reset: a reset is only as strong as the person's email, and
+     * this would let it destroy their stronger credentials.
+     */
+    public function removeAllForUser(\ProcessWire\User $user, string $reason = ''): int
+    {
+        if (!$user->id) return 0;
+        $storage = new \PasskeyAuth\Storage($this->wire('database')->pdo(), self::TABLE_NAME);
+        $removed = $storage->deleteAllForUser((int) $user->id);
+        if ($removed) {
+            $this->wire('log')->save('passkey-auth', sprintf('Removed all %d passkey(s) of user %d%s', $removed, (int) $user->id, $reason !== '' ? ' (' . preg_replace('/[^a-z0-9 _-]/i', '', $reason) . ')' : ''));
+        }
+        return $removed;
     }
 
     /**
@@ -276,7 +329,16 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             $this->wire()->addHook("{$prefix}/manage/delete", function() {
                 return $this->buildEndpoints()->delete();
             });
+            $this->wire()->addHook("{$prefix}/manage/reauth", function() {
+                return $this->buildEndpoints()->reauth();
+            });
         }
+
+        // Any sign-in (password, passkey, or another module's) counts as proof of who
+        // this session is, for the reauthMinutes rule on adding a passkey.
+        $this->addHookAfter('Session::loginSuccess', function() {
+            $this->markSignedIn();
+        });
 
         $this->addHookAfter('ProcessLogin::buildLoginForm', $this, 'addLoginButton');
         // Banner is injected directly into the rendered page (HTML + JS together)
@@ -751,6 +813,14 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $f->description = 'Friendly name shown in the OS biometric prompt. Defaults to host.';
         $f->value = $data['appName'] ?? '';
         $f->placeholder = $config->httpHost;
+        $fields->add($f);
+
+        $f = $modules->get('InputfieldInteger');
+        $f->name = 'reauthMinutes';
+        $f->label = 'Ask for the password before adding a passkey, unless signed in within (minutes)';
+        $f->description = 'A signed-in session is not proof of who is at the keyboard. With this set, adding a passkey needs a sign-in within that many minutes; otherwise the person is asked for their password first (or can sign out and in again). 0 = never ask.';
+        $f->min = 0; $f->max = 1440;
+        $f->value = (int) ($data['reauthMinutes'] ?? 0);
         $fields->add($f);
 
         $f = $modules->get('InputfieldText');

@@ -119,3 +119,7 @@
 .passkey-auth-manage [data-passkey-auth-action="add"] {
     margin-top: .25em;
 }
+
+/* The "confirm your password" prompt shown before a passkey is added (reauthMinutes). */
+.passkey-auth-reauth { margin: .75em 0 .25em; }
+.passkey-auth-reauth__input { margin: 0 .5em; max-width: 16em; }
