@@ -143,6 +143,18 @@
     outline: 2px solid #0969da;
     outline-offset: 1px;
 }
+/* In the admin, the theme draws every text box flat and edgeless with rules that outrank
+   the ones above. Here the box needs to read as a box, so these are forced; .pw-content is
+   the admin's content area, so a site's own page is not affected. */
+.pw-content .passkey-auth-manage input.passkey-auth-reauth__input {
+    width: 14em !important;
+    height: auto !important;
+    padding: .35em .5em !important;
+    background: #fff !important;
+    border: 1px solid #d0d7de !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+}
 .passkey-auth-reauth button {
     padding: .5em .9em;
     font: inherit;

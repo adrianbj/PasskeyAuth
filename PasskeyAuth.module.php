@@ -38,7 +38,7 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
             'title'    => 'Passkey Auth',
             'summary'  => 'WebAuthn passkey login for ProcessWire admin',
             'author'   => 'Adrian Jones',
-            'version'  => '0.4.1',
+            'version'  => '0.4.2',
             'icon'     => 'key',
             // autoload=true is required: the login URL hooks must be registered
             // before page resolution so guest POSTs to /passkey-auth/login/*
@@ -135,7 +135,9 @@ class PasskeyAuth extends WireData implements Module, ConfigurableModule
         $rows = $storage->listForUser($user->id);
         if (count($rows) === 0 && !$this->isUserInAllowedRoles($user)) return '';
 
-        $cssUrl = $this->wire('config')->urls($this) . 'PasskeyAuth.css';
+        // Versioned, like the script: servers commonly tell browsers to keep a stylesheet
+        // for weeks, and an unversioned link went on showing the previous one after an upgrade.
+        $cssUrl = $this->assetUrl('PasskeyAuth.css');
         $rowsHtml = '';
         foreach ($rows as $row) {
             $rowsHtml .= $this->renderManageRow($row);
