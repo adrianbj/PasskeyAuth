@@ -418,7 +418,8 @@
                 const input = document.createElement('input');
                 input.type = 'password';
                 input.autocomplete = 'current-password';
-                input.className = 'passkey-auth-reauth__input';
+                // uk-input: the admin theme (and a UIkit site) draws its text boxes by that class
+                input.className = 'passkey-auth-reauth__input uk-input';
                 label.appendChild(input);
                 const ok = document.createElement('button');
                 ok.type = 'button';

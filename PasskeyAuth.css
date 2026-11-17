@@ -120,6 +120,50 @@
     margin-top: .25em;
 }
 
-/* The "confirm your password" prompt shown before a passkey is added (reauthMinutes). */
-.passkey-auth-reauth { margin: .75em 0 .25em; }
-.passkey-auth-reauth__input { margin: 0 .5em; max-width: 16em; }
+/* The "confirm your password" prompt shown before a passkey is added (reauthMinutes).
+   Built bare by the script, so it is dressed here to match the rows above: the same
+   bordered buttons, with Confirm filled. A site can restyle it by these class names. */
+.passkey-auth-reauth {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5em;
+    margin: .75em 0 .25em;
+}
+.passkey-auth-reauth label {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5em;
+    margin: 0;
+}
+.passkey-auth-manage input.passkey-auth-reauth__input {
+    box-sizing: border-box;
+    width: 14em; max-width: 100%;
+    font: inherit; padding: .35em .5em;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+}
+.passkey-auth-manage input.passkey-auth-reauth__input:focus-visible {
+    outline: 2px solid #0969da;
+    outline-offset: 1px;
+}
+.passkey-auth-reauth button {
+    padding: .5em .9em;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    color: #57606a;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    cursor: pointer;
+}
+button.passkey-auth-reauth__confirm {
+    color: #fff;
+    background: #57606a;
+    border-color: #57606a;
+}
+button.passkey-auth-reauth__confirm:disabled {
+    opacity: .6;
+    cursor: default;
+}
+.passkey-auth-reauth button:focus-visible {
+    outline: 2px solid #0969da;
+    outline-offset: 1px;
+}
